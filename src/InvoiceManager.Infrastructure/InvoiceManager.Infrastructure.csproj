@@ -24,7 +24,7 @@
   <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
     <PackageReference Include="Azure.Security.KeyVault.Secrets" Version="4.11.0" />
-    <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.61.0" />
+    <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.62.1" />
     <!-- Standard resilience handler (Polly-based) for the Graph HttpClient: transient-fault
          and 429/503 throttling retry honouring Retry-After, with a bounded total timeout. -->
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.10" />
