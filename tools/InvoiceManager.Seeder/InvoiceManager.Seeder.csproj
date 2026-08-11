@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
-    <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.61.0" />
+    <PackageReference Include="Microsoft.Azure.Cosmos" Version="3.62.1" />
     <!-- Keep the configuration packages aligned with Infrastructure's dependency graph,
          avoiding an NU1605 downgrade. -->
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.10" />
