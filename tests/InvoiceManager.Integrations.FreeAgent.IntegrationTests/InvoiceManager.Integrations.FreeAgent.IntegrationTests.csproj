@@ -10,7 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.5.1" />
+    <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.5.2" />
     <PackageReference Include="coverlet.collector" Version="10.0.1" />
     <!-- Keep the configuration packages aligned with Infrastructure's dependency graph,
          avoiding an NU1605 downgrade. -->
