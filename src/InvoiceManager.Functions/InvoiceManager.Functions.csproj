@@ -23,7 +23,7 @@
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
     <!-- Loads MicrosoftAuthorization secrets (e.g. ClientSecret) from Key Vault into
          configuration via DefaultAzureCredential, mirroring the admin website. -->
-    <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.5.1" />
+    <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.5.2" />
     <!-- Distributed tracing export for the custom "InvoiceManager" ActivitySource.
          Registered inline in Program.cs (no shared ServiceDefaults project): OTLP to the
          Aspire dashboard locally, and quiet when no OTLP endpoint is configured. -->
