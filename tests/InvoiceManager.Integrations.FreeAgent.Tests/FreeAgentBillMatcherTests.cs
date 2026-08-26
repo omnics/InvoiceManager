@@ -1,4 +1,3 @@
-using InvoiceManager.Core;
 using InvoiceManager.Core.Integrations.FreeAgent;
 using InvoiceManager.TestSupport;
 using NodaMoney;
@@ -27,8 +26,35 @@ public sealed class FreeAgentBillMatcherTests
             new DateOnly(2026, 8, 1),
             3,
             new Money(121.00m, "GBP"),
-            0.01m,
-            new SourceInvoiceId("REF-1"));
+            0.01m);
+
+        var result = await matcher.FindBillAsync(criteria);
+
+        Assert.True(result is FreeAgentBillFound, $"Expected FreeAgentBillFound but got {result}.");
+    }
+
+    [Fact]
+    public async Task FindBillAsync_Matches_RegardlessOfBillReferenceText()
+    {
+        // The bill's reference is free text an operator typed in FreeAgent, sharing no words
+        // with either the invoice configuration's description ("Microsoft 365 Business Basic")
+        // or the source invoice's own identifier ("G172600804") - matching keys off contact +
+        // date + amount only.
+        var handler = new StubHttpMessageHandler((request, index) =>
+            index switch
+            {
+                0 => JsonResponse(BillsPageJson(("GBP", "121.00", "Recurring bill"))),
+                _ => JsonResponse(EmptyPageJson()),
+            });
+        var client = TestClientFactory.Create(handler);
+        var matcher = new FreeAgentBillMatcher(client);
+
+        var criteria = new FreeAgentBillSearchCriteria(
+            new FreeAgentContactIdentity(ContactUrl),
+            new DateOnly(2026, 8, 1),
+            3,
+            new Money(121.00m, "GBP"),
+            0.01m);
 
         var result = await matcher.FindBillAsync(criteria);
 
@@ -54,8 +80,7 @@ public sealed class FreeAgentBillMatcherTests
             new DateOnly(2026, 8, 1),
             3,
             new Money(121.00m, "GBP"),
-            0.01m,
-            new SourceInvoiceId("REF-1"));
+            0.01m);
 
         var result = await matcher.FindBillAsync(criteria);
 

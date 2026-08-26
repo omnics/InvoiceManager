@@ -5,8 +5,7 @@ namespace InvoiceManager.Integrations.FreeAgent;
 /// <summary>
 /// Finds the FreeAgent bill matching a retrieved/reconciled invoice. Pages all
 /// bills in the date/contact window (server-side filtering), then applies
-/// amount-tolerance and reference-substring filtering locally, matching the
-/// POC's proven division of server vs. client filtering.
+/// amount-tolerance filtering locally.
 /// </summary>
 internal sealed class FreeAgentBillMatcher : IFreeAgentBillMatcher
 {
@@ -42,7 +41,7 @@ internal sealed class FreeAgentBillMatcher : IFreeAgentBillMatcher
         }
 
         var matches = candidates
-            .Where(bill => MatchesAmount(bill, criteria) && MatchesReference(bill, criteria))
+            .Where(bill => MatchesAmount(bill, criteria))
             .ToList();
 
         return matches.Count switch
@@ -66,8 +65,4 @@ internal sealed class FreeAgentBillMatcher : IFreeAgentBillMatcher
         var expected = criteria.ExpectedAmount.Amount;
         return Math.Abs(totalValue - expected) <= criteria.AmountTolerance;
     }
-
-    private static bool MatchesReference(BillWire bill, FreeAgentBillSearchCriteria criteria) =>
-        bill.Reference is { } reference &&
-            reference.Contains(criteria.SourceInvoiceReference.Value, StringComparison.OrdinalIgnoreCase);
 }
