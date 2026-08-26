@@ -89,8 +89,9 @@ public sealed class AdminWebNavigationTests(AdminWebAppHostFixture appHost)
 
         await page.GotoAsync(new Uri(appHost.AdminWebUrl, "/ServiceStatus").ToString());
 
+        // cosmos, functions, freeagent-authorization, microsoft-authorization.
         var panels = page.Locator(".status-panel");
-        await Assertions.Expect(panels).ToHaveCountAsync(2);
+        await Assertions.Expect(panels).ToHaveCountAsync(4);
 
         var statusValues = page.Locator(".status-panel .status-value");
         var count = await statusValues.CountAsync();
