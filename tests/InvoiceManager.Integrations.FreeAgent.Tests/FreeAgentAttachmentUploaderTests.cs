@@ -90,8 +90,11 @@ public sealed class FreeAgentAttachmentUploaderTests
 
         await uploader.UploadAsync(new FreeAgentBillIdentity(BillUrl), [1, 2, 3], "invoice.pdf", Option.None);
 
+        // Asserted against a literal, not FreeAgentAttachmentContentType.Pdf itself - the point
+        // of this test is to catch the constant regressing back to "application/pdf", which an
+        // assertion built from the same constant could never detect.
         var uploadRequestBody = handler.Requests[1].Body;
-        Assert.Contains($"\"content_type\":\"{FreeAgentAttachmentContentType.Pdf}\"", uploadRequestBody);
+        Assert.Contains("\"content_type\":\"application/x-pdf\"", uploadRequestBody);
     }
 
     private static string BillWithAttachmentJson(string fileName, long fileSize) =>
