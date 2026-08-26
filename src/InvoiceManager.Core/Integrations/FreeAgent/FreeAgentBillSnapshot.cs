@@ -87,6 +87,18 @@ public sealed record FreeAgentAttachmentMetadata(
     DateTimeOffset UploadedAt);
 
 /// <summary>
+/// FreeAgent's accepted MIME type for a PDF bill attachment. Not the standard
+/// "application/pdf" - FreeAgent's documented <c>attachment.content_type</c> values are
+/// image/png, image/x-png, image/jpeg, image/jpg, image/gif, and application/x-pdf; the
+/// standard MIME type is rejected with 400 Bad Request. The single source of truth for
+/// every place that sends or compares a FreeAgent attachment's content type.
+/// </summary>
+public static class FreeAgentAttachmentContentType
+{
+    public const string Pdf = "application/x-pdf";
+}
+
+/// <summary>
 /// The Core-owned, provider-agnostic verified state of a FreeAgent bill after a
 /// query or mutation. The integration project must repopulate every field after
 /// every relevant mutation - this is what "verify status, total, paid amount,

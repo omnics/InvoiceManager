@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using InvoiceManager.Core.Integrations.FreeAgent;
 using InvoiceManager.Infrastructure.FreeAgentAuthorization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -131,7 +132,7 @@ internal sealed class FreeAgentApiClient
             {
                 data = Convert.ToBase64String(pdfBytes),
                 file_name = fileName,
-                content_type = "application/pdf",
+                content_type = FreeAgentAttachmentContentType.Pdf,
             },
         };
         var json = JsonSerializer.Serialize(payload, SerializerOptions);
