@@ -31,11 +31,16 @@ internal sealed class FreeAgentAttachmentUploader : IFreeAgentAttachmentUploader
         {
             var existingMetadata = existingAttachment.ToAttachmentMetadata();
 
+            // Content type is checked via FreeAgentAttachmentContentType.IsPdf, not equality
+            // against expected.ContentType - FreeAgent always reports "application/pdf" on read
+            // regardless of the "application/x-pdf" it required on write, so expected.ContentType
+            // (recorded at upload/attempt time) can legitimately differ from what a read-back
+            // ever reports.
             var matchesOwnLastUpload =
                 expectedExisting is FreeAgentAttachmentMetadata expected &&
                 string.Equals(expected.FileName, existingMetadata.FileName, StringComparison.Ordinal) &&
                 expected.FileSizeBytes == existingMetadata.FileSizeBytes &&
-                string.Equals(expected.ContentType, existingMetadata.ContentType, StringComparison.OrdinalIgnoreCase);
+                FreeAgentAttachmentContentType.IsPdf(existingMetadata.ContentType);
 
             if (matchesOwnLastUpload)
                 return new FreeAgentAttachmentAlreadyCorrect(existingMetadata);
@@ -68,7 +73,7 @@ internal sealed class FreeAgentAttachmentUploader : IFreeAgentAttachmentUploader
             mismatches.Add($"file name expected '{fileName}' but was '{verifiedAttachment.FileName}'");
         if (verifiedAttachment.FileSize != pdfContent.Length)
             mismatches.Add($"file size expected {pdfContent.Length} but was {verifiedAttachment.FileSize}");
-        if (!string.Equals(verifiedAttachment.ContentType, FreeAgentAttachmentContentType.Pdf, StringComparison.OrdinalIgnoreCase))
+        if (!FreeAgentAttachmentContentType.IsPdf(verifiedAttachment.ContentType))
             mismatches.Add($"content type expected '{FreeAgentAttachmentContentType.Pdf}' but was '{verifiedAttachment.ContentType}'");
 
         if (mismatches.Count > 0)
