@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using InvoiceManager.Core.Integrations.FreeAgent;
 using InvoiceManager.Infrastructure.FreeAgentAuthorization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -131,10 +132,7 @@ internal sealed class FreeAgentApiClient
             {
                 data = Convert.ToBase64String(pdfBytes),
                 file_name = fileName,
-                // FreeAgent's accepted attachment content_type values are image/png, image/x-png,
-                // image/jpeg, image/jpg, image/gif, and application/x-pdf - the standard
-                // "application/pdf" MIME type is not among them and is rejected with 400.
-                content_type = "application/x-pdf",
+                content_type = FreeAgentAttachmentContentType.Pdf,
             },
         };
         var json = JsonSerializer.Serialize(payload, SerializerOptions);

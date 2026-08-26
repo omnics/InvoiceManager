@@ -24,7 +24,7 @@ public sealed class FreeAgentAttachmentUploaderTests
             new FreeAgentBillIdentity(BillUrl),
             [1, 2, 3],
             "invoice.pdf",
-            new FreeAgentAttachmentMetadata("invoice.pdf", 1024, "application/x-pdf", DateTimeOffset.UtcNow));
+            new FreeAgentAttachmentMetadata("invoice.pdf", 1024, FreeAgentAttachmentContentType.Pdf, DateTimeOffset.UtcNow));
 
         Assert.True(result is FreeAgentAttachmentAlreadyCorrect, $"Expected FreeAgentAttachmentAlreadyCorrect but got {result}.");
         Assert.Single(handler.Requests); // only the GET, no PUT
@@ -72,7 +72,7 @@ public sealed class FreeAgentAttachmentUploaderTests
     }
 
     [Fact]
-    public async Task UploadAsync_SendsContentTypeApplicationXPdf_NotApplicationPdf()
+    public async Task UploadAsync_SendsFreeAgentAttachmentContentTypePdf_NotApplicationPdf()
     {
         // FreeAgent's documented attachment content_type values are image/png, image/x-png,
         // image/jpeg, image/jpg, image/gif, and application/x-pdf - "application/pdf" (the
@@ -91,7 +91,7 @@ public sealed class FreeAgentAttachmentUploaderTests
         await uploader.UploadAsync(new FreeAgentBillIdentity(BillUrl), [1, 2, 3], "invoice.pdf", Option.None);
 
         var uploadRequestBody = handler.Requests[1].Body;
-        Assert.Contains("\"content_type\":\"application/x-pdf\"", uploadRequestBody);
+        Assert.Contains($"\"content_type\":\"{FreeAgentAttachmentContentType.Pdf}\"", uploadRequestBody);
     }
 
     private static string BillWithAttachmentJson(string fileName, long fileSize) =>
@@ -110,7 +110,7 @@ public sealed class FreeAgentAttachmentUploaderTests
             "status": "Open",
             "attachment": {
               "url": "{{BillUrl}}/attachment",
-              "content_type": "application/x-pdf",
+              "content_type": "{{FreeAgentAttachmentContentType.Pdf}}",
               "file_name": "{{fileName}}",
               "file_size": {{fileSize}}
             },

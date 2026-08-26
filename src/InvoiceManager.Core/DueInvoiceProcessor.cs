@@ -495,7 +495,8 @@ public sealed class DueInvoiceProcessor(
                         // expectedExisting on the next retry, as long as it still matches.
                         var attemptedAttachment = new FreeAgentAttemptedAttachment(
                             billIdentity,
-                            new FreeAgentAttachmentMetadata(fileName, pdfContent.Length, "application/x-pdf", timeProvider.GetUtcNow()));
+                            new FreeAgentAttachmentMetadata(
+                                fileName, pdfContent.Length, FreeAgentAttachmentContentType.Pdf, timeProvider.GetUtcNow()));
                         await MarkFreeAgentErrorAsync(
                             reconciledRecord, actualDetails, oneDriveDetails, verificationFailed.Detail, attemptedAttachment, cancellationToken);
                         return new ProcessingFreeAgentConflict(reconciledRecord.Id, verificationFailed.Detail);
