@@ -82,31 +82,85 @@ public sealed class FreeAgentAttachmentUploaderTests
     }
 
     [Fact]
-    public async Task UploadAsync_ReportsWhichFieldMismatched_WhenVerificationFails()
+    public async Task UploadAsync_ReportsFileNameMismatch_WhenVerificationFails()
     {
-        // The read-back after upload can genuinely disagree with what was sent (e.g. a
-        // provider-side transform on the file name) - the failure reason must say which
-        // field(s) disagreed and what was expected vs. actual, not just "verification failed",
-        // so an operator can diagnose it from the persisted record/logs alone.
+        // The PUT response echoes exactly what was sent - only the final read-back GET
+        // disagrees - so a passing test proves the diagnostic comes from that read-back,
+        // not from re-describing the request we made.
+        var result = await UploadWithVerifyResponseAsync(BillWithAttachmentJson("mangled-name.pdf", 3));
+
+        Assert.True(result is FreeAgentVerificationFailed, $"Expected FreeAgentVerificationFailed but got {result}.");
+        if (result is FreeAgentVerificationFailed failed)
+        {
+            Assert.Equal(
+                "The uploaded attachment could not be verified after upload: " +
+                "file name expected 'invoice.pdf' but was 'mangled-name.pdf'.",
+                failed.Detail);
+        }
+    }
+
+    [Fact]
+    public async Task UploadAsync_ReportsFileSizeMismatch_WhenVerificationFails()
+    {
+        var result = await UploadWithVerifyResponseAsync(BillWithAttachmentJson("invoice.pdf", 999));
+
+        Assert.True(result is FreeAgentVerificationFailed, $"Expected FreeAgentVerificationFailed but got {result}.");
+        if (result is FreeAgentVerificationFailed failed)
+        {
+            Assert.Equal(
+                "The uploaded attachment could not be verified after upload: " +
+                "file size expected 3 but was 999.",
+                failed.Detail);
+        }
+    }
+
+    [Fact]
+    public async Task UploadAsync_ReportsContentTypeMismatch_WhenVerificationFails()
+    {
+        var result = await UploadWithVerifyResponseAsync(BillWithAttachmentJson("invoice.pdf", 3, "application/pdf"));
+
+        Assert.True(result is FreeAgentVerificationFailed, $"Expected FreeAgentVerificationFailed but got {result}.");
+        if (result is FreeAgentVerificationFailed failed)
+        {
+            Assert.Equal(
+                "The uploaded attachment could not be verified after upload: " +
+                "content type expected 'application/x-pdf' but was 'application/pdf'.",
+                failed.Detail);
+        }
+    }
+
+    [Fact]
+    public async Task UploadAsync_ReportsEveryMismatch_WhenMultipleFieldsDisagree()
+    {
+        var result = await UploadWithVerifyResponseAsync(
+            BillWithAttachmentJson("mangled-name.pdf", 999, "application/pdf"));
+
+        Assert.True(result is FreeAgentVerificationFailed, $"Expected FreeAgentVerificationFailed but got {result}.");
+        if (result is FreeAgentVerificationFailed failed)
+        {
+            Assert.Equal(
+                "The uploaded attachment could not be verified after upload: " +
+                "file name expected 'invoice.pdf' but was 'mangled-name.pdf'; " +
+                "file size expected 3 but was 999; " +
+                "content type expected 'application/x-pdf' but was 'application/pdf'.",
+                failed.Detail);
+        }
+    }
+
+    private static async Task<FreeAgentAttachmentResult> UploadWithVerifyResponseAsync(string verifyResponseJson)
+    {
         var handler = new StubHttpMessageHandler((request, index) =>
             index switch
             {
                 0 => JsonResponse(BillWithoutAttachmentJson()),
-                1 => JsonResponse(BillWithAttachmentJson("mangled-name.pdf", 3)),
-                2 => JsonResponse(BillWithAttachmentJson("mangled-name.pdf", 3)),
+                1 => JsonResponse(BillWithAttachmentJson("invoice.pdf", 3)),
+                2 => JsonResponse(verifyResponseJson),
                 _ => throw new InvalidOperationException("Unexpected request."),
             });
         var client = TestClientFactory.Create(handler);
         var uploader = new FreeAgentAttachmentUploader(client);
 
-        var result = await uploader.UploadAsync(
-            new FreeAgentBillIdentity(BillUrl), [1, 2, 3], "invoice.pdf", Option.None);
-
-        Assert.True(result is FreeAgentVerificationFailed, $"Expected FreeAgentVerificationFailed but got {result}.");
-        if (result is FreeAgentVerificationFailed failed)
-        {
-            Assert.Contains("file name expected 'invoice.pdf' but was 'mangled-name.pdf'", failed.Detail);
-        }
+        return await uploader.UploadAsync(new FreeAgentBillIdentity(BillUrl), [1, 2, 3], "invoice.pdf", Option.None);
     }
 
     [Fact]
@@ -135,7 +189,7 @@ public sealed class FreeAgentAttachmentUploaderTests
         Assert.Contains("\"content_type\":\"application/x-pdf\"", uploadRequestBody);
     }
 
-    private static string BillWithAttachmentJson(string fileName, long fileSize) =>
+    private static string BillWithAttachmentJson(string fileName, long fileSize, string? contentType = null) =>
         $$"""
         {
           "bill": {
@@ -151,7 +205,7 @@ public sealed class FreeAgentAttachmentUploaderTests
             "status": "Open",
             "attachment": {
               "url": "{{BillUrl}}/attachment",
-              "content_type": "{{FreeAgentAttachmentContentType.Pdf}}",
+              "content_type": "{{contentType ?? FreeAgentAttachmentContentType.Pdf}}",
               "file_name": "{{fileName}}",
               "file_size": {{fileSize}}
             },
