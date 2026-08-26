@@ -36,7 +36,7 @@ public union FreeAgentBillMatchResult(NoFreeAgentBillMatch, AmbiguousFreeAgentBi
 /// <summary>
 /// Finds the FreeAgent bill corresponding to a retrieved or reconciled invoice.
 /// Pages all relevant bills and matches using the configured date/amount
-/// tolerances and reference, never silently choosing among multiple candidates.
+/// tolerances, never silently choosing among multiple candidates.
 /// </summary>
 public interface IFreeAgentBillMatcher
 {
