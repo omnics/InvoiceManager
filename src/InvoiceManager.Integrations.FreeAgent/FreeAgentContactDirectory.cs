@@ -8,7 +8,7 @@ namespace InvoiceManager.Integrations.FreeAgent;
 /// FreeAgent has no free-text search parameter on <c>GET /v2/contacts</c> (only
 /// view/sort/updated_since filters), so <see cref="SearchAsync"/> pages through
 /// contacts and filters client-side - the same "server does what it can, filter
-/// the rest" split used for bill matching's amount-tolerance/reference filtering.
+/// the rest" split used for bill matching's amount-tolerance filtering.
 /// </summary>
 internal sealed class FreeAgentContactDirectory(FreeAgentApiClient client) : IFreeAgentContactDirectory
 {

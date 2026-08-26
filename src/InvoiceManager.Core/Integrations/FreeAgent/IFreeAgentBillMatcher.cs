@@ -11,8 +11,7 @@ public sealed record FreeAgentBillSearchCriteria(
     DateOnly ExpectedDate,
     int DateToleranceDays,
     Money ExpectedAmount,
-    decimal AmountTolerance,
-    SourceInvoiceId SourceInvoiceReference);
+    decimal AmountTolerance);
 
 /// <summary>No FreeAgent bill matched the search criteria.</summary>
 public sealed record NoFreeAgentBillMatch;
