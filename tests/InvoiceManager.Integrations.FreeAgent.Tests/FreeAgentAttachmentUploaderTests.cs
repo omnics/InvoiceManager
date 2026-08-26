@@ -68,7 +68,9 @@ public sealed class FreeAgentAttachmentUploaderTests
 
         Assert.True(result is FreeAgentAttachmentUploaded, $"Expected FreeAgentAttachmentUploaded but got {result}.");
         Assert.Equal(HttpMethod.Put, handler.Requests[1].Method);
-        Assert.Contains("/attachment", handler.Requests[1].RequestUri!.ToString());
+        // FreeAgent has no standalone "/attachment" sub-resource endpoint for bills - the
+        // attachment is set via an ordinary PUT to the bill's own URL, nested under "bill".
+        Assert.Equal(BillUrl, handler.Requests[1].RequestUri!.ToString());
     }
 
     [Fact]
