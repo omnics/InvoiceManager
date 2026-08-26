@@ -82,6 +82,34 @@ public sealed class FreeAgentAttachmentUploaderTests
     }
 
     [Fact]
+    public async Task UploadAsync_ReportsWhichFieldMismatched_WhenVerificationFails()
+    {
+        // The read-back after upload can genuinely disagree with what was sent (e.g. a
+        // provider-side transform on the file name) - the failure reason must say which
+        // field(s) disagreed and what was expected vs. actual, not just "verification failed",
+        // so an operator can diagnose it from the persisted record/logs alone.
+        var handler = new StubHttpMessageHandler((request, index) =>
+            index switch
+            {
+                0 => JsonResponse(BillWithoutAttachmentJson()),
+                1 => JsonResponse(BillWithAttachmentJson("mangled-name.pdf", 3)),
+                2 => JsonResponse(BillWithAttachmentJson("mangled-name.pdf", 3)),
+                _ => throw new InvalidOperationException("Unexpected request."),
+            });
+        var client = TestClientFactory.Create(handler);
+        var uploader = new FreeAgentAttachmentUploader(client);
+
+        var result = await uploader.UploadAsync(
+            new FreeAgentBillIdentity(BillUrl), [1, 2, 3], "invoice.pdf", Option.None);
+
+        Assert.True(result is FreeAgentVerificationFailed, $"Expected FreeAgentVerificationFailed but got {result}.");
+        if (result is FreeAgentVerificationFailed failed)
+        {
+            Assert.Contains("file name expected 'invoice.pdf' but was 'mangled-name.pdf'", failed.Detail);
+        }
+    }
+
+    [Fact]
     public async Task UploadAsync_SendsFreeAgentAttachmentContentTypePdf_NotApplicationPdf()
     {
         // FreeAgent's documented attachment content_type values are image/png, image/x-png,

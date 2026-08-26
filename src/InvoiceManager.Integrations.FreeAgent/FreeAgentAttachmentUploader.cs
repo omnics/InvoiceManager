@@ -54,12 +54,27 @@ internal sealed class FreeAgentAttachmentUploader : IFreeAgentAttachmentUploader
         // metadata persisted as this record's last-known-good upload also comes from this
         // verified read, never the upload response, in case that response itself is stale.
         var verify = await client.GetBillAsync(bill.Url.OriginalString, cancellationToken);
-        if (verify.Attachment is not { } verifiedAttachment ||
-            !string.Equals(verifiedAttachment.FileName, fileName, StringComparison.Ordinal) ||
-            verifiedAttachment.FileSize != pdfContent.Length ||
-            !string.Equals(verifiedAttachment.ContentType, FreeAgentAttachmentContentType.Pdf, StringComparison.OrdinalIgnoreCase))
+        if (verify.Attachment is not { } verifiedAttachment)
         {
-            return new FreeAgentVerificationFailed("The uploaded attachment could not be verified after upload.");
+            return new FreeAgentVerificationFailed(
+                "The uploaded attachment could not be verified after upload: the bill has no attachment.");
+        }
+
+        // Named mismatches, not just a single "verification failed" - none of file name, size, or
+        // content type are secret, so recording exactly what disagreed is safe and is the only way
+        // to diagnose a provider-side transform (e.g. character mangling) without re-triggering.
+        var mismatches = new List<string>();
+        if (!string.Equals(verifiedAttachment.FileName, fileName, StringComparison.Ordinal))
+            mismatches.Add($"file name expected '{fileName}' but was '{verifiedAttachment.FileName}'");
+        if (verifiedAttachment.FileSize != pdfContent.Length)
+            mismatches.Add($"file size expected {pdfContent.Length} but was {verifiedAttachment.FileSize}");
+        if (!string.Equals(verifiedAttachment.ContentType, FreeAgentAttachmentContentType.Pdf, StringComparison.OrdinalIgnoreCase))
+            mismatches.Add($"content type expected '{FreeAgentAttachmentContentType.Pdf}' but was '{verifiedAttachment.ContentType}'");
+
+        if (mismatches.Count > 0)
+        {
+            return new FreeAgentVerificationFailed(
+                $"The uploaded attachment could not be verified after upload: {string.Join("; ", mismatches)}.");
         }
 
         var newMetadata = verifiedAttachment.ToAttachmentMetadata();
