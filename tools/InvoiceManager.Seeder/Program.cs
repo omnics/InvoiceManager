@@ -16,15 +16,21 @@ var configuration = new ConfigurationBuilder()
     .Build();
 
 // Flags:
-//   --ensure-schema   create the database and containers before seeding. Passed only by the
-//                     local Aspire bootstrap: the emulator starts empty. In the cloud
-//                     Terraform owns schema and the seeder's identity holds only a data role.
-//   --clear-database  delete every item from the containers (data-plane deletes) before
-//                     seeding, giving a clean slate. Refused against production without --force.
-//   --force           override the production --clear-database guard.
-//   --environment <n> deployment environment (required). When "test", downloads are nested
-//                     under a root "Test" folder so they never collide with production files.
-var (ensureSchema, clearDatabase, force, environment, positionalArgs) = ParseArgs(args);
+//   --ensure-schema      create the database and containers before seeding. Passed only by the
+//                        local Aspire bootstrap: the emulator starts empty. In the cloud
+//                        Terraform owns schema and the seeder's identity holds only a data role.
+//   --clear-database     delete every item from every container (data-plane deletes) before
+//                        seeding, giving a clean slate. Refused against production without --force.
+//   --clear-records-only delete every item from invoice-records and freeagent-interventions only
+//                        (data-plane deletes), then exit without touching invoice-configurations
+//                        or loading the seed file at all. For winding a Test environment's run
+//                        history back to empty between manual test cycles without disturbing
+//                        configurations edited by hand since they were seeded. Mutually exclusive
+//                        with --clear-database; refused against production without --force.
+//   --force              override the production --clear-database/--clear-records-only guard.
+//   --environment <n>    deployment environment (required). When "test", downloads are nested
+//                        under a root "Test" folder so they never collide with production files.
+var (ensureSchema, clearDatabase, clearRecordsOnly, force, environment, positionalArgs) = ParseArgs(args);
 
 if (string.IsNullOrWhiteSpace(environment))
 {
@@ -33,6 +39,15 @@ if (string.IsNullOrWhiteSpace(environment))
     Console.Out.Flush();
     Console.Error.Flush();
     Environment.Exit(5);
+}
+
+if (clearDatabase && clearRecordsOnly)
+{
+    await Console.Error.WriteLineAsync(
+        "--clear-database and --clear-records-only are mutually exclusive.");
+    Console.Out.Flush();
+    Console.Error.Flush();
+    Environment.Exit(6);
 }
 
 var isTest = string.Equals(environment, "test", StringComparison.OrdinalIgnoreCase);
@@ -47,7 +62,31 @@ if (clearDatabase && isProduction && !force)
     Environment.Exit(4);
 }
 
+if (clearRecordsOnly && isProduction && !force)
+{
+    await Console.Error.WriteLineAsync(
+        "Refusing --clear-records-only against the production environment. Pass --force to override.");
+    Console.Out.Flush();
+    Console.Error.Flush();
+    Environment.Exit(4);
+}
+
 var databaseName = configuration["CosmosDatabase"] ?? "invoicemanager";
+
+if (clearRecordsOnly)
+{
+    Console.WriteLine("Seeder starting.");
+    Console.WriteLine($"  Database:    {databaseName}");
+    Console.WriteLine($"  Environment: {environment}");
+    Console.WriteLine("  Mode:        Clear records only (invoice-records, freeagent-interventions) - invoice-configurations untouched");
+
+    var recordsOnlyClient = CosmosClientFactory.Create(configuration);
+    await ClearContainersAsync(
+        recordsOnlyClient, databaseName, [CosmosSchema.InvoiceRecords, CosmosSchema.FreeAgentInterventions]);
+    Console.WriteLine("Clear complete.");
+    Console.Out.Flush();
+    return;
+}
 
 var seedFilePath = positionalArgs.Length > 0
     ? positionalArgs[0]
@@ -101,7 +140,7 @@ try
 
     if (clearDatabase)
     {
-        await ClearDatabaseAsync(cosmosClient, databaseName);
+        await ClearContainersAsync(cosmosClient, databaseName, CosmosSchema.Containers);
     }
 
     var repository = new CosmosInvoiceConfigurationRepository(cosmosClient, databaseName);
@@ -205,11 +244,12 @@ static async Task EnsureSchemaAsync(CosmosClient client, string databaseName)
     }
 }
 
-// Deletes every item from each known container using data-plane deletes only, so it works
+// Deletes every item from each given container using data-plane deletes only, so it works
 // with just the seeder's Cosmos data-plane role (no control-plane container recreate).
-static async Task ClearDatabaseAsync(CosmosClient client, string databaseName)
+static async Task ClearContainersAsync(
+    CosmosClient client, string databaseName, IReadOnlyList<ContainerDefinition> containers)
 {
-    foreach (var definition in CosmosSchema.Containers)
+    foreach (var definition in containers)
     {
         var container = client.GetContainer(databaseName, definition.Name);
         var partitionKeyProperty = definition.PartitionKeyPath.TrimStart('/');
@@ -256,10 +296,12 @@ static IntegrationConfiguration ToIntegrationConfiguration(SeedInvoiceConfigurat
 static OneDriveFolder ToOneDriveFolder(SeedOneDriveFolder folder, bool isTest) =>
     new(folder.DriveId, folder.DriveName, folder.FolderItemId, isTest ? $"/Test{folder.FolderPath}" : folder.FolderPath);
 
-static (bool EnsureSchema, bool ClearDatabase, bool Force, string? Environment, string[] Positional) ParseArgs(string[] args)
+static (bool EnsureSchema, bool ClearDatabase, bool ClearRecordsOnly, bool Force, string? Environment, string[] Positional)
+    ParseArgs(string[] args)
 {
     var ensureSchema = false;
     var clearDatabase = false;
+    var clearRecordsOnly = false;
     var force = false;
     string? environment = null;
     var positional = new List<string>();
@@ -274,6 +316,10 @@ static (bool EnsureSchema, bool ClearDatabase, bool Force, string? Environment, 
         else if (arg.Equals("--clear-database", StringComparison.OrdinalIgnoreCase))
         {
             clearDatabase = true;
+        }
+        else if (arg.Equals("--clear-records-only", StringComparison.OrdinalIgnoreCase))
+        {
+            clearRecordsOnly = true;
         }
         else if (arg.Equals("--force", StringComparison.OrdinalIgnoreCase))
         {
@@ -310,5 +356,5 @@ static (bool EnsureSchema, bool ClearDatabase, bool Force, string? Environment, 
         }
     }
 
-    return (ensureSchema, clearDatabase, force, environment, positional.ToArray());
+    return (ensureSchema, clearDatabase, clearRecordsOnly, force, environment, positional.ToArray());
 }
