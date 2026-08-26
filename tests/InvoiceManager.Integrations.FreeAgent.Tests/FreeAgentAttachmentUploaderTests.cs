@@ -1,3 +1,4 @@
+using System.Text.Json;
 using InvoiceManager.Core;
 using InvoiceManager.Core.Integrations.FreeAgent;
 using InvoiceManager.TestSupport;
@@ -69,8 +70,15 @@ public sealed class FreeAgentAttachmentUploaderTests
         Assert.True(result is FreeAgentAttachmentUploaded, $"Expected FreeAgentAttachmentUploaded but got {result}.");
         Assert.Equal(HttpMethod.Put, handler.Requests[1].Method);
         // FreeAgent has no standalone "/attachment" sub-resource endpoint for bills - the
-        // attachment is set via an ordinary PUT to the bill's own URL, nested under "bill".
+        // attachment is set via an ordinary PUT to the bill's own URL, nested under "bill",
+        // the same as any other bill field. Asserted on both the URL and the payload's exact
+        // nesting so this test would fail if either half of the fix regressed independently.
         Assert.Equal(BillUrl, handler.Requests[1].RequestUri!.ToString());
+        using var uploadRequestBody = JsonDocument.Parse(handler.Requests[1].Body!);
+        var attachment = uploadRequestBody.RootElement.GetProperty("bill").GetProperty("attachment");
+        Assert.Equal("invoice.pdf", attachment.GetProperty("file_name").GetString());
+        Assert.Equal(FreeAgentAttachmentContentType.Pdf, attachment.GetProperty("content_type").GetString());
+        Assert.Equal(Convert.ToBase64String([1, 2, 3]), attachment.GetProperty("data").GetString());
     }
 
     [Fact]
