@@ -76,13 +76,22 @@ var databaseName = configuration["CosmosDatabase"] ?? "invoicemanager";
 if (clearRecordsOnly)
 {
     Console.WriteLine("Seeder starting.");
-    Console.WriteLine($"  Database:    {databaseName}");
-    Console.WriteLine($"  Environment: {environment}");
-    Console.WriteLine("  Mode:        Clear records only (invoice-records, freeagent-interventions) - invoice-configurations untouched");
+    Console.WriteLine($"  Database:      {databaseName}");
+    Console.WriteLine($"  Environment:   {environment}");
+    Console.WriteLine($"  Ensure schema: {ensureSchema}");
+    Console.WriteLine("  Mode:          Clear records only (invoice-records, freeagent-interventions) - invoice-configurations untouched");
 
     var recordsOnlyClient = CosmosClientFactory.Create(configuration);
-    await ClearContainersAsync(
-        recordsOnlyClient, databaseName, [CosmosSchema.InvoiceRecords, CosmosSchema.FreeAgentInterventions]);
+    await RunWithCosmosErrorHandlingAsync(async () =>
+    {
+        if (ensureSchema)
+        {
+            await EnsureSchemaAsync(recordsOnlyClient, databaseName);
+        }
+
+        await ClearContainersAsync(
+            recordsOnlyClient, databaseName, [CosmosSchema.InvoiceRecords, CosmosSchema.FreeAgentInterventions]);
+    });
     Console.WriteLine("Clear complete.");
     Console.Out.Flush();
     return;
@@ -131,7 +140,7 @@ var configurations = records.Select(r => new InvoiceConfiguration(
 
 var cosmosClient = CosmosClientFactory.Create(configuration);
 
-try
+await RunWithCosmosErrorHandlingAsync(async () =>
 {
     if (ensureSchema)
     {
@@ -146,18 +155,30 @@ try
     var repository = new CosmosInvoiceConfigurationRepository(cosmosClient, databaseName);
     var seeder = new ConfigurationSeeder(repository);
     await seeder.SeedAsync(configurations);
-}
-catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
-{
-    await Console.Error.WriteLineAsync(
-        $"Cosmos DB returned 403 Forbidden — the RBAC role assignment may not yet have " +
-        $"propagated. ({ex.Message})");
-    Console.Out.Flush();
-    Console.Error.Flush();
-    Environment.Exit(2);
-}
+});
 
 Console.WriteLine("Seeding complete.");
+
+// Shared so both the full seed flow and --clear-records-only report the same actionable
+// message and exit code on a 403 - RBAC role assignments can take up to ~60s to propagate
+// after Terraform creates them, and the caller (Deploy-Infra.ps1) retries specifically on
+// exit code 2.
+static async Task RunWithCosmosErrorHandlingAsync(Func<Task> action)
+{
+    try
+    {
+        await action();
+    }
+    catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+    {
+        await Console.Error.WriteLineAsync(
+            $"Cosmos DB returned 403 Forbidden — the RBAC role assignment may not yet have " +
+            $"propagated. ({ex.Message})");
+        Console.Out.Flush();
+        Console.Error.Flush();
+        Environment.Exit(2);
+    }
+}
 
 static string ReplaceSeedTokens(string json, IConfiguration configuration, bool isTest)
 {
