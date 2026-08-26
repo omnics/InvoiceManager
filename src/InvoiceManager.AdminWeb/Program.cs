@@ -12,6 +12,7 @@ using Microsoft.Azure.Cosmos;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authentication.OAuth;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
@@ -130,7 +131,13 @@ builder.Services.AddHttpClient<IMicrosoftResourceDiscovery, MicrosoftResourceDis
 builder.Services
     .AddHealthChecks()
     .AddCheck<CosmosHealthCheck>("cosmos")
-    .AddCheck<FunctionsHealthCheck>("functions");
+    .AddCheck<FunctionsHealthCheck>("functions")
+    // Tagged "authorization" and kept off the anonymous /health endpoint below: unlike the
+    // Cosmos/Functions checks, these consume a rotating FreeAgent refresh token and mint live
+    // Microsoft/FreeAgent tokens, so they should only run for an authenticated admin viewing the
+    // ServiceStatus page, not on every anonymous probe of /health.
+    .AddCheck<FreeAgentAuthorizationHealthCheck>("freeagent-authorization", tags: ["authorization"])
+    .AddCheck<MicrosoftAuthorizationHealthCheck>("microsoft-authorization", tags: ["authorization"]);
 builder.Services.AddRazorPages();
 
 var app = builder.Build();
@@ -152,7 +159,10 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapStaticAssets();
-app.MapHealthChecks("/health").AllowAnonymous();
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    Predicate = registration => !registration.Tags.Contains("authorization"),
+}).AllowAnonymous();
 app.MapRazorPages()
    .WithStaticAssets();
 
@@ -402,6 +412,83 @@ internal sealed class FunctionsHealthCheck(
         {
             logger.LogWarning(ex, "Admin web Functions health check failed.");
             return HealthCheckResult.Unhealthy("Functions app is not reachable.", ex);
+        }
+    }
+}
+
+internal sealed class FreeAgentAuthorizationHealthCheck(
+    IFreeAgentAuthorizationStore authorizationStore,
+    IFreeAgentTokenProvider tokenProvider,
+    ILogger<FreeAgentAuthorizationHealthCheck> logger)
+    : IHealthCheck
+{
+    // FreeAgentAuthorizationOptions is validated with ValidateOnStart (ClientId/ClientSecret
+    // required), so AdminWeb never reaches a running state with that configuration missing -
+    // there is no "not configured" outcome to report here, only "not yet authorized" or
+    // "authorization no longer works".
+    public async Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext context,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await authorizationStore.HasRefreshTokenAsync(cancellationToken))
+        {
+            return HealthCheckResult.Unhealthy(
+                "No FreeAgent authorization has been captured. An administrator must authorize " +
+                "FreeAgent on the Authorization page.");
+        }
+
+        try
+        {
+            // Acquiring a token exercises the same refresh path production traffic uses. The
+            // access token this returns is cached in-process for ~1 hour by FreeAgentTokenProvider,
+            // so repeated health checks do not force the rotating refresh token to be consumed on
+            // every page view - only when that cache has actually expired.
+            await tokenProvider.AcquireTokenAsync(cancellationToken);
+            return HealthCheckResult.Healthy("FreeAgent authorization is valid.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Admin web FreeAgent authorization health check failed.");
+            return HealthCheckResult.Unhealthy("FreeAgent authorization is invalid or expired.", ex);
+        }
+    }
+}
+
+internal sealed class MicrosoftAuthorizationHealthCheck(
+    IMicrosoftAuthorizationStore authorizationStore,
+    IMicrosoftTokenProvider tokenProvider,
+    ILogger<MicrosoftAuthorizationHealthCheck> logger)
+    : IHealthCheck
+{
+    // User.Read is requested during every sign-in (see MicrosoftOpenIdConnectOptionsSetup), so it
+    // is always already consented - this check only needs to confirm the cached refresh token can
+    // still silently mint an access token, not exercise any particular downstream API.
+    private static readonly string[] Scopes = ["User.Read"];
+
+    // MicrosoftAuthorizationOptions is validated with ValidateOnStart (TenantId/ClientId/
+    // ClientSecret required), so AdminWeb never reaches a running state with that configuration
+    // missing - there is no "not configured" outcome to report here, only "not yet authorized" or
+    // "authorization no longer works".
+    public async Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext context,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await authorizationStore.HasTokenCacheAsync(cancellationToken))
+        {
+            return HealthCheckResult.Unhealthy(
+                "No Microsoft authorization has been captured. An administrator must authorize " +
+                "Microsoft on the Authorization page.");
+        }
+
+        try
+        {
+            await tokenProvider.AcquireTokenAsync(Scopes, cancellationToken);
+            return HealthCheckResult.Healthy("Microsoft authorization is valid.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Admin web Microsoft authorization health check failed.");
+            return HealthCheckResult.Unhealthy("Microsoft authorization is invalid or expired.", ex);
         }
     }
 }
