@@ -325,7 +325,7 @@ settings added by hand through the AdminWeb Edit page since they were last seede
 run the seeder directly with `--clear-records-only` instead of `-ClearDatabase`:
 
 ```powershell
-$outputs = terraform -chdir=infra/terraform output -json
+$outputs = terraform -chdir=infra/terraform output -json | ConvertFrom-Json
 $env:CosmosEndpoint = $outputs.cosmos_endpoint.value
 $env:CosmosDatabase = $outputs.cosmos_database_name.value
 dotnet run --project tools/InvoiceManager.Seeder -- --environment test --clear-records-only
@@ -335,8 +335,11 @@ This deletes every item from the `invoice-records` and `freeagent-interventions`
 containers only (data-plane deletes) and exits — it never loads the seed file and
 never touches `invoice-configurations`. Like `-ClearDatabase`, it is refused against
 `production` unless also passed `--force`, and it is mutually exclusive with
-`--clear-database`. After clearing, trigger "Generate expected records" from the
-AdminWeb homepage (or wait for `GenerateExpectedRecordsTimer`) to regenerate expected
+`--clear-database`. Like `-ClearDatabase`, it only takes a snapshot of item IDs and
+then deletes them — it does not pause `GenerateExpectedRecordsTimer` or any other
+writer, so run it when no due-invoice processing run is in flight, or a record
+created mid-clear can survive. After clearing, trigger "Generate expected records"
+from the AdminWeb homepage (or wait for `GenerateExpectedRecordsTimer`) to regenerate expected
 records from each configuration's `StartDate`, as if no runs had yet occurred.
 
 Use `-AutoApprove` only when the script should skip its confirmation prompt
