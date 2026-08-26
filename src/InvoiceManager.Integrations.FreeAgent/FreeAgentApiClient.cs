@@ -126,18 +126,24 @@ internal sealed class FreeAgentApiClient
     public async Task<AttachmentWire> PostAttachmentAsync(
         string billUrl, byte[] pdfBytes, string fileName, CancellationToken cancellationToken)
     {
+        // FreeAgent's Bills API has no standalone "/attachment" sub-resource endpoint (only
+        // GET/PUT/DELETE /v2/bills/:id and GET/DELETE /v2/attachments/:id) - an attachment is
+        // set the same way any other bill field is, by nesting it in an ordinary bill update.
         var payload = new
         {
-            attachment = new
+            bill = new
             {
-                data = Convert.ToBase64String(pdfBytes),
-                file_name = fileName,
-                content_type = FreeAgentAttachmentContentType.Pdf,
+                attachment = new
+                {
+                    data = Convert.ToBase64String(pdfBytes),
+                    file_name = fileName,
+                    content_type = FreeAgentAttachmentContentType.Pdf,
+                },
             },
         };
         var json = JsonSerializer.Serialize(payload, SerializerOptions);
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        using var response = await SendAsync(HttpMethod.Put, $"{billUrl}/attachment", content, cancellationToken);
+        using var response = await SendAsync(HttpMethod.Put, billUrl, content, cancellationToken);
         await EnsureSuccessAsync(response, "uploading a bill attachment", cancellationToken);
         var body = await response.Content.ReadFromJsonAsync<BillResponseWire>(SerializerOptions, cancellationToken);
         return body?.Bill?.Attachment
