@@ -117,14 +117,17 @@ public sealed class FreeAgentAttachmentUploaderTests
     [Fact]
     public async Task UploadAsync_ReportsContentTypeMismatch_WhenVerificationFails()
     {
-        var result = await UploadWithVerifyResponseAsync(BillWithAttachmentJson("invoice.pdf", 3, "application/pdf"));
+        // "image/png" (not "application/pdf") - FreeAgent normalizes "application/x-pdf" to
+        // "application/pdf" on read (see FreeAgentAttachmentContentType.IsPdf), so that specific
+        // value is a legitimate read-back, not a mismatch to report.
+        var result = await UploadWithVerifyResponseAsync(BillWithAttachmentJson("invoice.pdf", 3, "image/png"));
 
         Assert.True(result is FreeAgentVerificationFailed, $"Expected FreeAgentVerificationFailed but got {result}.");
         if (result is FreeAgentVerificationFailed failed)
         {
             Assert.Equal(
                 "The uploaded attachment could not be verified after upload: " +
-                "content type expected 'application/x-pdf' but was 'application/pdf'.",
+                "content type expected 'application/x-pdf' but was 'image/png'.",
                 failed.Detail);
         }
     }
@@ -133,7 +136,7 @@ public sealed class FreeAgentAttachmentUploaderTests
     public async Task UploadAsync_ReportsEveryMismatch_WhenMultipleFieldsDisagree()
     {
         var result = await UploadWithVerifyResponseAsync(
-            BillWithAttachmentJson("mangled-name.pdf", 999, "application/pdf"));
+            BillWithAttachmentJson("mangled-name.pdf", 999, "image/png"));
 
         Assert.True(result is FreeAgentVerificationFailed, $"Expected FreeAgentVerificationFailed but got {result}.");
         if (result is FreeAgentVerificationFailed failed)
@@ -142,9 +145,48 @@ public sealed class FreeAgentAttachmentUploaderTests
                 "The uploaded attachment could not be verified after upload: " +
                 "file name expected 'invoice.pdf' but was 'mangled-name.pdf'; " +
                 "file size expected 3 but was 999; " +
-                "content type expected 'application/x-pdf' but was 'application/pdf'.",
+                "content type expected 'application/x-pdf' but was 'image/png'.",
                 failed.Detail);
         }
+    }
+
+    [Fact]
+    public async Task UploadAsync_TreatsApplicationPdf_AsAValidReadBackOfApplicationXPdf()
+    {
+        // Confirmed against the sandbox: FreeAgent requires "application/x-pdf" on write (see
+        // UploadAsync_SendsFreeAgentAttachmentContentTypePdf_NotApplicationPdf) but always
+        // reports the standard "application/pdf" back when the same attachment is read - not
+        // documented anywhere, and not a real mismatch.
+        var result = await UploadWithVerifyResponseAsync(BillWithAttachmentJson("invoice.pdf", 3, "application/pdf"));
+
+        Assert.True(result is FreeAgentAttachmentUploaded, $"Expected FreeAgentAttachmentUploaded but got {result}.");
+    }
+
+    [Fact]
+    public async Task UploadAsync_SkipsUpload_WhenExistingContentTypeIsTheReadBackApplicationPdf()
+    {
+        // expectedExisting.ContentType (as constructed by DueInvoiceProcessor after a previous
+        // attempt) always carries the write-time "application/x-pdf" literal, never a read-back
+        // value - the existing bill's real read-back content type ("application/pdf") must still
+        // count as a match, or a record whose only prior failure was this exact normalization
+        // would wrongly be treated as "someone else attached something" on retry.
+        var handler = new StubHttpMessageHandler((request, index) =>
+            index switch
+            {
+                0 => JsonResponse(BillWithAttachmentJson("invoice.pdf", 1024, "application/pdf")),
+                _ => throw new InvalidOperationException("No upload call should have been made."),
+            });
+        var client = TestClientFactory.Create(handler);
+        var uploader = new FreeAgentAttachmentUploader(client);
+
+        var result = await uploader.UploadAsync(
+            new FreeAgentBillIdentity(BillUrl),
+            [1, 2, 3],
+            "invoice.pdf",
+            new FreeAgentAttachmentMetadata("invoice.pdf", 1024, FreeAgentAttachmentContentType.Pdf, DateTimeOffset.UtcNow));
+
+        Assert.True(result is FreeAgentAttachmentAlreadyCorrect, $"Expected FreeAgentAttachmentAlreadyCorrect but got {result}.");
+        Assert.Single(handler.Requests); // only the GET, no PUT
     }
 
     private static async Task<FreeAgentAttachmentResult> UploadWithVerifyResponseAsync(string verifyResponseJson)

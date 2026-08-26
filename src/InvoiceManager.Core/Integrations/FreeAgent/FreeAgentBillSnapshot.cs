@@ -96,6 +96,19 @@ public sealed record FreeAgentAttachmentMetadata(
 public static class FreeAgentAttachmentContentType
 {
     public const string Pdf = "application/x-pdf";
+
+    /// <summary>
+    /// True for any content type FreeAgent may legitimately report for a PDF attachment on
+    /// read. Confirmed against the sandbox (undocumented): FreeAgent's write and read
+    /// vocabularies for this field disagree - an upload must use <see cref="Pdf"/>
+    /// ("application/x-pdf") or it is rejected with 400, but reading that same attachment back
+    /// reports the standard "application/pdf" instead. Comparisons against a value FreeAgent
+    /// itself returned (an existing or just-uploaded attachment) must accept both, or a
+    /// provider-side normalization that isn't actually wrong looks like a failure.
+    /// </summary>
+    public static bool IsPdf(string? contentType) =>
+        string.Equals(contentType, Pdf, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(contentType, "application/pdf", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>
