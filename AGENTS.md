@@ -68,19 +68,39 @@ Be careful with:
 - Prefer integration tests with fakes or test doubles before calling real
   external services.
 - Do not require real secrets or paid cloud resources for unit tests.
-- The Cosmos emulator integration tests (`InvoiceManager.Infrastructure.IntegrationTests`,
-  tagged `[Trait("Category", "Integration")]`) require the Dockerised Cosmos
-  emulator and are **not run in CI** — the emulator is too slow/unreliable to warm
-  up on hosted runners. Run them locally with Docker before pushing changes that
-  touch persistence:
+- Several suites are tagged `[Trait("Category", "Integration")]` and are
+  **excluded from CI** (`ci.yml` runs `dotnet test --filter "Category!=Integration"`)
+  because they need local infrastructure or real credentials CI doesn't have:
+  `InvoiceManager.Infrastructure.IntegrationTests` (Cosmos emulator),
+  `InvoiceManager.AdminWeb.PlaywrightTests` (real signed-in browser session),
+  and `InvoiceManager.Integrations.FreeAgent.IntegrationTests` (real FreeAgent
+  sandbox). Because none of these run in CI, they are the *only* signal that
+  catches regressions in their area — **always run all of them locally before
+  pushing any change**, not only changes that obviously touch that area (a
+  change elsewhere can still break persistence, the admin UI, or the FreeAgent
+  integration in ways that aren't obvious from the diff). `InvoiceManager.AppHost.IntegrationTests`
+  boots the real Aspire orchestration end-to-end and should be run alongside them.
+  See [docs/deployment.md](docs/deployment.md#local-playwright-auth-state-for-the-admin-website)
+  for Playwright auth-state setup/refresh and FreeAgent sandbox prerequisites.
+- The Cosmos emulator integration tests require Docker running:
   `dotnet test tests/InvoiceManager.Infrastructure.IntegrationTests`.
-  CI runs everything else via `dotnet test --filter "Category!=Integration"`.
-- The Playwright suite (`InvoiceManager.AdminWeb.PlaywrightTests`) is also
-  excluded from CI for the same reason, and additionally needs real,
-  Graph-verifiable Microsoft 365 credentials/IDs (see
-  `tools/dev-setup/Set-SeedEnvironment.ps1`) — it is the one suite most likely
-  to pass locally for the author and still be silently broken for CI/other
-  reviewers, so treat a green run of it as informative, not authoritative.
+- The Playwright suite additionally needs real, Graph-verifiable Microsoft 365
+  credentials/IDs (see `tools/dev-setup/Set-SeedEnvironment.ps1`) and a saved
+  Playwright storage state (`playwright/.auth/adminweb.json`) — it is the one
+  suite most likely to pass locally for the author and still be silently
+  broken for CI/other reviewers, so treat a green run of it as informative,
+  not authoritative. Don't run the whole suite just to check whether the saved
+  session is still valid — that pays the full Aspire-orchestration boot cost
+  and then times out repeatedly (30s per test) once every test hits the same
+  sign-in redirect, burning several minutes to learn one fact. Instead run the
+  cheap two-test smoke check first:
+  `dotnet test tests/InvoiceManager.AdminWeb.PlaywrightTests --filter "FullyQualifiedName~AdminWebSignInSmokeTests"`.
+  If it fails on an Entra sign-in redirect instead of reaching the admin UI,
+  the saved session has expired — re-capture it with
+  `dotnet run --project tools/InvoiceManager.PlaywrightAuth` (reuses a
+  persistent Edge profile, so if that profile still has an active Microsoft
+  sign-in it can complete without any interactive prompt), then re-run the
+  smoke test to confirm before running the full suite.
 - When you make a previously-permissive code path stricter (e.g. adding a new
   server-side check, live verification call, or discovery-list membership
   requirement to a form submission), grep the test suites for existing tests

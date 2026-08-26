@@ -498,6 +498,17 @@ instance.
 Re-run the tool whenever the saved session expires (an Entra sign-in prompt
 reappearing is the signal).
 
+To check whether the saved session is still valid without paying the cost of
+the full suite (which boots the whole Aspire orchestration and then, if the
+session has expired, times out on every single test hitting the same sign-in
+redirect), run just the two-test smoke check first:
+
+```bash
+dotnet test tests/InvoiceManager.AdminWeb.PlaywrightTests --filter "FullyQualifiedName~AdminWebSignInSmokeTests"
+```
+
+Only run the full suite once that passes.
+
 ### FreeAgent opt-in sandbox integration test
 
 `tests/InvoiceManager.Integrations.FreeAgent.IntegrationTests` is the FreeAgent
