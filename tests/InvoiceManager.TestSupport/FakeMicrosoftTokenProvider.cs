@@ -6,7 +6,8 @@ namespace InvoiceManager.TestSupport;
 /// A token provider test double that returns a fixed token and records the scopes
 /// it was asked for.
 /// </summary>
-public sealed class FakeMicrosoftTokenProvider(string token = "fake-access-token") : IMicrosoftTokenProvider
+public sealed class FakeMicrosoftTokenProvider(string token = "fake-access-token", Exception? failure = null)
+    : IMicrosoftTokenProvider
 {
     private readonly List<IReadOnlyCollection<string>> requestedScopes = [];
 
@@ -17,6 +18,6 @@ public sealed class FakeMicrosoftTokenProvider(string token = "fake-access-token
         CancellationToken cancellationToken = default)
     {
         requestedScopes.Add(scopes);
-        return Task.FromResult(token);
+        return failure is null ? Task.FromResult(token) : Task.FromException<string>(failure);
     }
 }

@@ -130,7 +130,9 @@ builder.Services.AddHttpClient<IMicrosoftResourceDiscovery, MicrosoftResourceDis
 builder.Services
     .AddHealthChecks()
     .AddCheck<CosmosHealthCheck>("cosmos")
-    .AddCheck<FunctionsHealthCheck>("functions");
+    .AddCheck<FunctionsHealthCheck>("functions")
+    .AddCheck<FreeAgentAuthorizationHealthCheck>("freeagent-authorization")
+    .AddCheck<MicrosoftAuthorizationHealthCheck>("microsoft-authorization");
 builder.Services.AddRazorPages();
 
 var app = builder.Build();
@@ -402,6 +404,89 @@ internal sealed class FunctionsHealthCheck(
         {
             logger.LogWarning(ex, "Admin web Functions health check failed.");
             return HealthCheckResult.Unhealthy("Functions app is not reachable.", ex);
+        }
+    }
+}
+
+internal sealed class FreeAgentAuthorizationHealthCheck(
+    IFreeAgentAuthorizationStore authorizationStore,
+    IFreeAgentTokenProvider tokenProvider,
+    IOptions<FreeAgentAuthorizationOptions> authorizationOptions,
+    ILogger<FreeAgentAuthorizationHealthCheck> logger)
+    : IHealthCheck
+{
+    public async Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext context,
+        CancellationToken cancellationToken = default)
+    {
+        if (!authorizationOptions.Value.HasClientConfiguration)
+        {
+            return HealthCheckResult.Unhealthy(
+                "FreeAgentAuthorization:ClientId and ClientSecret are not configured.");
+        }
+
+        if (!await authorizationStore.HasRefreshTokenAsync(cancellationToken))
+        {
+            return HealthCheckResult.Unhealthy(
+                "No FreeAgent authorization has been captured. An administrator must authorize " +
+                "FreeAgent on the Authorization page.");
+        }
+
+        try
+        {
+            // Acquiring a token exercises the same refresh path production traffic uses. The
+            // access token this returns is cached in-process for ~1 hour by FreeAgentTokenProvider,
+            // so repeated health checks do not force the rotating refresh token to be consumed on
+            // every page view - only when that cache has actually expired.
+            await tokenProvider.AcquireTokenAsync(cancellationToken);
+            return HealthCheckResult.Healthy("FreeAgent authorization is valid.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Admin web FreeAgent authorization health check failed.");
+            return HealthCheckResult.Unhealthy("FreeAgent authorization is invalid or expired.", ex);
+        }
+    }
+}
+
+internal sealed class MicrosoftAuthorizationHealthCheck(
+    IMicrosoftAuthorizationStore authorizationStore,
+    IMicrosoftTokenProvider tokenProvider,
+    IOptions<MicrosoftAuthorizationOptions> authorizationOptions,
+    ILogger<MicrosoftAuthorizationHealthCheck> logger)
+    : IHealthCheck
+{
+    // User.Read is requested during every sign-in (see MicrosoftOpenIdConnectOptionsSetup), so it
+    // is always already consented - this check only needs to confirm the cached refresh token can
+    // still silently mint an access token, not exercise any particular downstream API.
+    private static readonly string[] Scopes = ["User.Read"];
+
+    public async Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext context,
+        CancellationToken cancellationToken = default)
+    {
+        if (!authorizationOptions.Value.HasEntraConfiguration || !authorizationOptions.Value.HasClientSecret)
+        {
+            return HealthCheckResult.Unhealthy(
+                "MicrosoftAuthorization:TenantId, ClientId, and ClientSecret are not fully configured.");
+        }
+
+        if (!await authorizationStore.HasTokenCacheAsync(cancellationToken))
+        {
+            return HealthCheckResult.Unhealthy(
+                "No Microsoft authorization has been captured. An administrator must authorize " +
+                "Microsoft on the Authorization page.");
+        }
+
+        try
+        {
+            await tokenProvider.AcquireTokenAsync(Scopes, cancellationToken);
+            return HealthCheckResult.Healthy("Microsoft authorization is valid.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Admin web Microsoft authorization health check failed.");
+            return HealthCheckResult.Unhealthy("Microsoft authorization is invalid or expired.", ex);
         }
     }
 }
