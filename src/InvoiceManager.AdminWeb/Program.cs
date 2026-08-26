@@ -12,6 +12,7 @@ using Microsoft.Azure.Cosmos;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authentication.OAuth;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
@@ -131,8 +132,12 @@ builder.Services
     .AddHealthChecks()
     .AddCheck<CosmosHealthCheck>("cosmos")
     .AddCheck<FunctionsHealthCheck>("functions")
-    .AddCheck<FreeAgentAuthorizationHealthCheck>("freeagent-authorization")
-    .AddCheck<MicrosoftAuthorizationHealthCheck>("microsoft-authorization");
+    // Tagged "authorization" and kept off the anonymous /health endpoint below: unlike the
+    // Cosmos/Functions checks, these consume a rotating FreeAgent refresh token and mint live
+    // Microsoft/FreeAgent tokens, so they should only run for an authenticated admin viewing the
+    // ServiceStatus page, not on every anonymous probe of /health.
+    .AddCheck<FreeAgentAuthorizationHealthCheck>("freeagent-authorization", tags: ["authorization"])
+    .AddCheck<MicrosoftAuthorizationHealthCheck>("microsoft-authorization", tags: ["authorization"]);
 builder.Services.AddRazorPages();
 
 var app = builder.Build();
@@ -154,7 +159,10 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapStaticAssets();
-app.MapHealthChecks("/health").AllowAnonymous();
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    Predicate = registration => !registration.Tags.Contains("authorization"),
+}).AllowAnonymous();
 app.MapRazorPages()
    .WithStaticAssets();
 
@@ -411,20 +419,17 @@ internal sealed class FunctionsHealthCheck(
 internal sealed class FreeAgentAuthorizationHealthCheck(
     IFreeAgentAuthorizationStore authorizationStore,
     IFreeAgentTokenProvider tokenProvider,
-    IOptions<FreeAgentAuthorizationOptions> authorizationOptions,
     ILogger<FreeAgentAuthorizationHealthCheck> logger)
     : IHealthCheck
 {
+    // FreeAgentAuthorizationOptions is validated with ValidateOnStart (ClientId/ClientSecret
+    // required), so AdminWeb never reaches a running state with that configuration missing -
+    // there is no "not configured" outcome to report here, only "not yet authorized" or
+    // "authorization no longer works".
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
-        if (!authorizationOptions.Value.HasClientConfiguration)
-        {
-            return HealthCheckResult.Unhealthy(
-                "FreeAgentAuthorization:ClientId and ClientSecret are not configured.");
-        }
-
         if (!await authorizationStore.HasRefreshTokenAsync(cancellationToken))
         {
             return HealthCheckResult.Unhealthy(
@@ -452,7 +457,6 @@ internal sealed class FreeAgentAuthorizationHealthCheck(
 internal sealed class MicrosoftAuthorizationHealthCheck(
     IMicrosoftAuthorizationStore authorizationStore,
     IMicrosoftTokenProvider tokenProvider,
-    IOptions<MicrosoftAuthorizationOptions> authorizationOptions,
     ILogger<MicrosoftAuthorizationHealthCheck> logger)
     : IHealthCheck
 {
@@ -461,16 +465,14 @@ internal sealed class MicrosoftAuthorizationHealthCheck(
     // still silently mint an access token, not exercise any particular downstream API.
     private static readonly string[] Scopes = ["User.Read"];
 
+    // MicrosoftAuthorizationOptions is validated with ValidateOnStart (TenantId/ClientId/
+    // ClientSecret required), so AdminWeb never reaches a running state with that configuration
+    // missing - there is no "not configured" outcome to report here, only "not yet authorized" or
+    // "authorization no longer works".
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
-        if (!authorizationOptions.Value.HasEntraConfiguration || !authorizationOptions.Value.HasClientSecret)
-        {
-            return HealthCheckResult.Unhealthy(
-                "MicrosoftAuthorization:TenantId, ClientId, and ClientSecret are not fully configured.");
-        }
-
         if (!await authorizationStore.HasTokenCacheAsync(cancellationToken))
         {
             return HealthCheckResult.Unhealthy(

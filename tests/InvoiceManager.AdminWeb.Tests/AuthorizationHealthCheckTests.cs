@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 
 namespace InvoiceManager.AdminWeb.Tests;
 
@@ -74,13 +75,49 @@ public sealed class AuthorizationHealthCheckTests
         Assert.Equal(HealthStatus.Unhealthy, entry.Status);
     }
 
+    [Fact]
+    public async Task AuthorizationChecks_AreTaggedToBeExcludedFromTheAnonymousHealthEndpoint()
+    {
+        // These checks consume a rotating FreeAgent refresh token and mint live Microsoft/FreeAgent
+        // tokens, so /health's Predicate must exclude them from the anonymous endpoint (only the
+        // authenticated ServiceStatus page, which runs every registered check with no predicate,
+        // should trigger them) - assert on the tag that predicate depends on directly.
+        await using var factory = CreateFactory();
+        using var scope = factory.Services.CreateScope();
+        var registrations = scope.ServiceProvider
+            .GetRequiredService<IOptions<HealthCheckServiceOptions>>().Value.Registrations;
+
+        var authorizationChecks = registrations.Where(r => r.Name is "freeagent-authorization" or "microsoft-authorization");
+        Assert.NotEmpty(authorizationChecks);
+        Assert.All(authorizationChecks, r => Assert.Contains("authorization", r.Tags));
+
+        var otherChecks = registrations.Where(r => r.Name is "cosmos" or "functions");
+        Assert.NotEmpty(otherChecks);
+        Assert.All(otherChecks, r => Assert.DoesNotContain("authorization", r.Tags));
+    }
+
     private static async Task<HealthReport> CheckHealthAsync(
         IFreeAgentAuthorizationStore? freeAgentAuthorizationStore = null,
         IFreeAgentTokenProvider? freeAgentTokenProvider = null,
         IMicrosoftAuthorizationStore? microsoftAuthorizationStore = null,
         IMicrosoftTokenProvider? microsoftTokenProvider = null)
     {
-        await using var factory = new WebApplicationFactory<Program>()
+        await using var factory = CreateFactory(
+            freeAgentAuthorizationStore, freeAgentTokenProvider, microsoftAuthorizationStore, microsoftTokenProvider);
+
+        using var scope = factory.Services.CreateScope();
+        var healthCheckService = scope.ServiceProvider.GetRequiredService<HealthCheckService>();
+        return await healthCheckService.CheckHealthAsync(
+            registration => registration.Name is "freeagent-authorization" or "microsoft-authorization");
+    }
+
+    private static WebApplicationFactory<Program> CreateFactory(
+        IFreeAgentAuthorizationStore? freeAgentAuthorizationStore = null,
+        IFreeAgentTokenProvider? freeAgentTokenProvider = null,
+        IMicrosoftAuthorizationStore? microsoftAuthorizationStore = null,
+        IMicrosoftTokenProvider? microsoftTokenProvider = null)
+    {
+        return new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Testing");
@@ -111,11 +148,6 @@ public sealed class AuthorizationHealthCheckTests
                         microsoftTokenProvider ?? new FakeMicrosoftTokenProvider());
                 });
             });
-
-        using var scope = factory.Services.CreateScope();
-        var healthCheckService = scope.ServiceProvider.GetRequiredService<HealthCheckService>();
-        return await healthCheckService.CheckHealthAsync(
-            registration => registration.Name is "freeagent-authorization" or "microsoft-authorization");
     }
 
     private sealed class FakeMicrosoftAuthorizationStore(bool hasTokenCache) : IMicrosoftAuthorizationStore
