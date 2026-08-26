@@ -317,6 +317,42 @@ The script does not install Terraform or Azure CLI automatically. If either tool
 is missing, it prints installation instructions for the current operator to
 follow.
 
+### Resetting a Test environment's run history (`--clear-records-only`)
+
+To wind a Test environment's run history back to empty — e.g. between manual test
+cycles — without touching `invoice-configurations` (including any FreeAgent-matching
+settings added by hand through the AdminWeb Edit page since they were last seeded),
+run the seeder directly with `--clear-records-only` instead of `-ClearDatabase`:
+
+This assumes `infra/terraform`'s Terraform backend is already reconfigured against the
+environment you intend to target — e.g. you've just run `Deploy-Infra.ps1 -Environment
+test`, which itself runs `terraform init -reconfigure` against that environment's state
+before anything else. If you aren't sure which backend is currently selected, re-run
+`Deploy-Infra.ps1 -Environment test -PlanOnly` first (safe: it only reconfigures the
+backend and plans, it never applies) rather than guessing.
+
+```powershell
+$outputs = terraform -chdir=infra/terraform output -json | ConvertFrom-Json
+$env:CosmosEndpoint = $outputs.cosmos_endpoint.value
+$env:CosmosDatabase = $outputs.cosmos_database_name.value
+dotnet run --project tools/InvoiceManager.Seeder -- --environment $outputs.environment.value --clear-records-only
+```
+
+`--environment` is read from the same parsed Terraform output rather than typed by hand,
+so the Cosmos endpoint above and the seeder's own production `--force` guard can never
+diverge from whichever backend is actually selected.
+
+This deletes every item from the `invoice-records` and `freeagent-interventions`
+containers only (data-plane deletes) and exits — it never loads the seed file and
+never touches `invoice-configurations`. Like `-ClearDatabase`, it is refused against
+`production` unless also passed `--force`, and it is mutually exclusive with
+`--clear-database`. Like `-ClearDatabase`, it only takes a snapshot of item IDs and
+then deletes them — it does not pause `GenerateExpectedRecordsTimer` or any other
+writer, so run it when no due-invoice processing run is in flight, or a record
+created mid-clear can survive. After clearing, trigger "Generate expected records"
+from the AdminWeb homepage (or wait for `GenerateExpectedRecordsTimer`) to regenerate expected
+records from each configuration's `StartDate`, as if no runs had yet occurred.
+
 Use `-AutoApprove` only when the script should skip its confirmation prompt
 before applying the saved plan:
 
