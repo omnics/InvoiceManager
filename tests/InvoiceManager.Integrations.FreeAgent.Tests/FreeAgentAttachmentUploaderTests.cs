@@ -24,7 +24,7 @@ public sealed class FreeAgentAttachmentUploaderTests
             new FreeAgentBillIdentity(BillUrl),
             [1, 2, 3],
             "invoice.pdf",
-            new FreeAgentAttachmentMetadata("invoice.pdf", 1024, "application/pdf", DateTimeOffset.UtcNow));
+            new FreeAgentAttachmentMetadata("invoice.pdf", 1024, "application/x-pdf", DateTimeOffset.UtcNow));
 
         Assert.True(result is FreeAgentAttachmentAlreadyCorrect, $"Expected FreeAgentAttachmentAlreadyCorrect but got {result}.");
         Assert.Single(handler.Requests); // only the GET, no PUT
@@ -71,6 +71,29 @@ public sealed class FreeAgentAttachmentUploaderTests
         Assert.Contains("/attachment", handler.Requests[1].RequestUri!.ToString());
     }
 
+    [Fact]
+    public async Task UploadAsync_SendsContentTypeApplicationXPdf_NotApplicationPdf()
+    {
+        // FreeAgent's documented attachment content_type values are image/png, image/x-png,
+        // image/jpeg, image/jpg, image/gif, and application/x-pdf - "application/pdf" (the
+        // standard MIME type) is not among them and FreeAgent rejects it with 400 Bad Request.
+        var handler = new StubHttpMessageHandler((request, index) =>
+            index switch
+            {
+                0 => JsonResponse(BillWithoutAttachmentJson()),
+                1 => JsonResponse(BillWithAttachmentJson("invoice.pdf", 3)),
+                2 => JsonResponse(BillWithAttachmentJson("invoice.pdf", 3)),
+                _ => throw new InvalidOperationException("Unexpected request."),
+            });
+        var client = TestClientFactory.Create(handler);
+        var uploader = new FreeAgentAttachmentUploader(client);
+
+        await uploader.UploadAsync(new FreeAgentBillIdentity(BillUrl), [1, 2, 3], "invoice.pdf", Option.None);
+
+        var uploadRequestBody = handler.Requests[1].Body;
+        Assert.Contains("\"content_type\":\"application/x-pdf\"", uploadRequestBody);
+    }
+
     private static string BillWithAttachmentJson(string fileName, long fileSize) =>
         $$"""
         {
@@ -87,7 +110,7 @@ public sealed class FreeAgentAttachmentUploaderTests
             "status": "Open",
             "attachment": {
               "url": "{{BillUrl}}/attachment",
-              "content_type": "application/pdf",
+              "content_type": "application/x-pdf",
               "file_name": "{{fileName}}",
               "file_size": {{fileSize}}
             },

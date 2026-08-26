@@ -131,7 +131,10 @@ internal sealed class FreeAgentApiClient
             {
                 data = Convert.ToBase64String(pdfBytes),
                 file_name = fileName,
-                content_type = "application/pdf",
+                // FreeAgent's accepted attachment content_type values are image/png, image/x-png,
+                // image/jpeg, image/jpg, image/gif, and application/x-pdf - the standard
+                // "application/pdf" MIME type is not among them and is rejected with 400.
+                content_type = "application/x-pdf",
             },
         };
         var json = JsonSerializer.Serialize(payload, SerializerOptions);

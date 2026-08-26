@@ -57,7 +57,7 @@ internal sealed class FreeAgentAttachmentUploader : IFreeAgentAttachmentUploader
         if (verify.Attachment is not { } verifiedAttachment ||
             !string.Equals(verifiedAttachment.FileName, fileName, StringComparison.Ordinal) ||
             verifiedAttachment.FileSize != pdfContent.Length ||
-            !string.Equals(verifiedAttachment.ContentType, "application/pdf", StringComparison.OrdinalIgnoreCase))
+            !string.Equals(verifiedAttachment.ContentType, "application/x-pdf", StringComparison.OrdinalIgnoreCase))
         {
             return new FreeAgentVerificationFailed("The uploaded attachment could not be verified after upload.");
         }
