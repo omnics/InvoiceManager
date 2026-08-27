@@ -61,7 +61,8 @@ public sealed class IndexModel(
         TempData["StatusMessage"] = result switch
         {
             InvoiceRecordResyncTriggerSucceeded =>
-                "The most recent record was refreshed from the current configuration and will retry on the next run.",
+                "The most recent record was refreshed from the current configuration and reset to Expected; it will " +
+                "be retried the next time this configuration is processed (skipped while it is inactive).",
             InvoiceRecordResyncTriggerNoRecordExists =>
                 "This configuration has no record yet, so there is nothing to resync.",
             InvoiceRecordResyncTriggerNotEligible =>
