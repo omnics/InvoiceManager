@@ -143,6 +143,32 @@ public sealed class GraphEmailInvoiceSourceTests
     }
 
     [Fact]
+    public async Task FindInvoiceAsync_DiagnosticBlamesDate_NotAmount_WhenExtractedInvoiceDateIsOutsideTolerance()
+    {
+        // The email's receivedDateTime is within the search window (so it's a candidate at
+        // all), but the PDF's own extracted invoice date is not - a distinct rejection reason
+        // from an amount mismatch, and one that must not be misreported as "amount" just
+        // because no AmountMatchingCriteria happens to be configured.
+        var handler = MessagesThenAttachments(
+            Messages(("msg-1", "2025-07-12", "Your invoice is attached.")),
+            ("msg-1", Attachments(("att-1", SinglePdfBytes))));
+        var extractor = new FakePdfExtractor(_ => new PdfExtractionSucceeded(new DateOnly(2025, 8, 1), new Money(11.59m, "GBP")));
+        var source = Build(handler, extractor);
+
+        var result = await source.FindInvoiceAsync(Criteria());
+
+        if (result is not NoInvoiceMatch noMatch)
+        {
+            Assert.Fail($"Expected NoInvoiceMatch but got {result}.");
+            return;
+        }
+
+        Assert.Contains("2025-08-01", noMatch.Diagnostic);
+        Assert.Contains("date tolerance", noMatch.Diagnostic);
+        Assert.DoesNotContain("any amount", noMatch.Diagnostic);
+    }
+
+    [Fact]
     public async Task FindInvoiceAsync_SkipsCandidateWithWrongAmount_AndAcceptsAFurtherCandidateThatMatches()
     {
         var handler = MessagesThenAttachments(

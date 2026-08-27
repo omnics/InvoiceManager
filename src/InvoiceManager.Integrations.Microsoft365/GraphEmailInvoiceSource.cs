@@ -60,7 +60,7 @@ public sealed class GraphEmailInvoiceSource(
         // candidate message - carried into the diagnostic so a rejected invoice's actual
         // date/amount is visible without re-reading provider logs (mirrors the other
         // source integrations' "nearest rejected candidate" diagnostic).
-        var rejectedCandidates = new List<(DateOnly Date, Money Total)>();
+        var rejectedCandidates = new List<RejectedEmailCandidate>();
 
         // Closest to the expected date first, mirroring the closest-match preference
         // used by the other source/OneDrive matchers.
@@ -138,7 +138,7 @@ public sealed class GraphEmailInvoiceSource(
         CancellationToken cancellationToken)
     {
         var readFailures = new List<string>();
-        var rejectedCandidates = new List<(DateOnly Date, Money Total)>();
+        var rejectedCandidates = new List<RejectedEmailCandidate>();
 
         foreach (var attachment in pdfAttachments)
         {
@@ -149,7 +149,11 @@ public sealed class GraphEmailInvoiceSource(
             {
                 if (!criteria.Matches(succeeded.InvoiceDate, succeeded.Total))
                 {
-                    rejectedCandidates.Add((succeeded.InvoiceDate, succeeded.Total));
+                    // criteria.Matches rejects on date, amount, or both - record which, so the
+                    // diagnostic never blames "amount" for a candidate whose date was actually
+                    // the reason (or claims an amount mismatch when no amount is even configured).
+                    var withinDateTolerance = criteria.DateDistanceDays(succeeded.InvoiceDate) <= criteria.DateToleranceDays;
+                    rejectedCandidates.Add(new RejectedEmailCandidate(succeeded.InvoiceDate, succeeded.Total, withinDateTolerance));
                     continue;
                 }
 
@@ -187,7 +191,7 @@ public sealed class GraphEmailInvoiceSource(
         GraphEmailIntegrationConfiguration email,
         InvoiceSearchCriteria criteria,
         int candidateCount,
-        IReadOnlyList<(DateOnly Date, Money Total)> rejectedCandidates)
+        IReadOnlyList<RejectedEmailCandidate> rejectedCandidates)
     {
         var windowStart = criteria.ExpectedDate.AddDays(-criteria.DateToleranceDays);
         var windowEnd = criteria.ExpectedDate.AddDays(criteria.DateToleranceDays);
@@ -212,11 +216,23 @@ public sealed class GraphEmailInvoiceSource(
         }
 
         var nearest = rejectedCandidates.OrderBy(candidate => criteria.DateDistanceDays(candidate.Date)).First();
+        var rejectionReason = nearest.WithinDateTolerance
+            ? $"the expected amount {amountDescription}"
+            : $"the {criteria.DateToleranceDays}-day invoice-date tolerance around {criteria.ExpectedDate:yyyy-MM-dd}";
+
         return $"{candidateCount} email(s) from {email.SenderEmailAddress} matched the date window " +
             $"({windowStart:yyyy-MM-dd} to {windowEnd:yyyy-MM-dd}) and {bodyPatternDescription}; " +
-            $"{rejectedCandidates.Count} PDF attachment(s) extracted but none matched the expected amount " +
-            $"{amountDescription}; nearest was dated {nearest.Date:yyyy-MM-dd} for {nearest.Total.Amount} {nearest.Total.Currency}.";
+            $"{rejectedCandidates.Count} PDF attachment(s) extracted but none matched {rejectionReason}; " +
+            $"nearest was dated {nearest.Date:yyyy-MM-dd} for {nearest.Total.Amount} {nearest.Total.Currency}.";
     }
+
+    /// <summary>
+    /// A successfully-extracted PDF attachment that failed the search criteria - carries
+    /// which side of the check it failed, since <see cref="InvoiceSearchCriteria.Matches"/>
+    /// rejects on invoice date, amount, or both, and a diagnostic that blames "amount" for a
+    /// candidate rejected only on date (or vice versa) misleads whoever reads it.
+    /// </summary>
+    private sealed record RejectedEmailCandidate(DateOnly Date, Money Total, bool WithinDateTolerance);
 
     private async Task<IReadOnlyList<GraphMessage>> ListCandidateMessagesAsync(
         GraphEmailIntegrationConfiguration email,
@@ -345,7 +361,7 @@ public sealed class GraphEmailInvoiceSource(
     /// the wrong invoice, not an error. Carries each rejected attachment's actual date/total
     /// so the caller's diagnostic can report the nearest one.
     /// </summary>
-    private sealed record EmailInvoiceCriteriaMismatch(IReadOnlyList<(DateOnly Date, Money Total)> RejectedCandidates);
+    private sealed record EmailInvoiceCriteriaMismatch(IReadOnlyList<RejectedEmailCandidate> RejectedCandidates);
 
     /// <summary>At least one PDF attachment could not be read at all — a technical failure.</summary>
     private sealed record EmailInvoiceExtractionFailed(string Reason);

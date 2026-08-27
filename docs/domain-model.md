@@ -284,12 +284,16 @@ without the values that state requires.
 
 Current states:
 
-- `Expected` — no payload; the invoice is still due for retrieval. Covers both
-  records never yet attempted and records whose attempts have so far found no
-  match while still within the tolerance window (today is before
-  `expectedDate + dateToleranceDays`). Retried on later runs.
-- `NotFound` — no payload; the invoice could not be found on or after the
-  tolerance deadline. Terminal state. Reaching `NotFound` also stops the
+- `Expected` — carries an optional `LastDiagnostic`: absent for a record never
+  yet attempted, or the source integration's explanation of why its most
+  recent attempt found nothing, while still within the tolerance window (today
+  is before `expectedDate + dateToleranceDays`). Retried on later runs, with
+  `LastDiagnostic` refreshed on every attempt.
+- `NotFound` — carries `Diagnostic`: the source integration's explanation of
+  why the deadline-time attempt found nothing (search window, expected
+  amount/tolerance, and the nearest rejected candidate's actual values, if
+  any) - absent only for a record persisted before this field existed.
+  Terminal state. Reaching `NotFound` also stops the
   recurrence for that configuration: no further expected records are created
   while its most recent record is `NotFound` (see
   [Next-expected creation and cancellation](#next-expected-creation-and-cancellation)).
