@@ -129,7 +129,17 @@ public sealed class GraphEmailInvoiceSourceTests
         var result = await source.FindInvoiceAsync(Criteria(
             amountMatchingCriteria: new AmountMatchingCriteria(new Money(11.59m, "GBP"), 0m)));
 
-        Assert.True(result is NoInvoiceMatch, $"Expected NoInvoiceMatch but got {result}.");
+        if (result is not NoInvoiceMatch noMatch)
+        {
+            Assert.Fail($"Expected NoInvoiceMatch but got {result}.");
+            return;
+        }
+
+        // The rejected PDF's actual date/amount must appear in the diagnostic - it is the
+        // one piece of information a manual mailbox search can't quickly surface.
+        Assert.Contains("2025-07-12", noMatch.Diagnostic);
+        Assert.Contains("99.99", noMatch.Diagnostic);
+        Assert.Contains("11.59", noMatch.Diagnostic);
     }
 
     [Fact]

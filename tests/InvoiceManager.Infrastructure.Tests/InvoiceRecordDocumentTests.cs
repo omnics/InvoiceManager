@@ -174,13 +174,13 @@ public sealed class InvoiceRecordDocumentTests
     }
 
     [Fact]
-    public void ToRecord_DefaultsToEmptyDiagnostic_WhenNotFoundDocumentPredatesTheField()
+    public void ToRecord_DefaultsToNoDiagnostic_WhenNotFoundDocumentPredatesTheField()
     {
         var document = BuildDocument(status: "NotFound");
 
         var record = document.ToRecord();
 
-        Assert.Equal(new NotFound(string.Empty), record.State);
+        Assert.Equal(new NotFound(Option.None), record.State);
     }
 
     [Fact]

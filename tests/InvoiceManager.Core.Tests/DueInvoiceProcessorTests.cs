@@ -235,7 +235,8 @@ public sealed class DueInvoiceProcessorTests
 
         Assert.True(Assert.Single(results) is ProcessingNotFound);
         Assert.True(
-            records.All.Single().State is NotFound { Diagnostic: "test diagnostic" },
+            records.All.Single().State is NotFound { Diagnostic: string notFoundDiagnostic } &&
+                notFoundDiagnostic == "test diagnostic",
             $"Expected NotFound with Diagnostic 'test diagnostic' but was {records.All.Single().State}.");
         Assert.Empty(oneDrive.Uploads);
     }

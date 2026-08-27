@@ -192,7 +192,7 @@ internal sealed class InvoiceRecordDocument
     private InvoiceWorkflowState ToState() => Status switch
     {
         nameof(Expected) => new Expected(LastMatchDiagnostic is { } expectedDiagnostic ? expectedDiagnostic : Option.None),
-        nameof(NotFound) => new NotFound(LastMatchDiagnostic ?? string.Empty),
+        nameof(NotFound) => new NotFound(LastMatchDiagnostic is { } notFoundDiagnostic ? notFoundDiagnostic : Option.None),
         nameof(RetrievalError) => new RetrievalError(LastError ?? string.Empty),
         nameof(Retrieved) => new Retrieved(RequiredActualDetails()),
         nameof(ReconciledFromOneDrive) => new ReconciledFromOneDrive(
@@ -267,7 +267,11 @@ internal sealed class InvoiceRecordDocument
             Status = nameof(Expected),
             LastMatchDiagnostic = expected.LastDiagnostic switch { string d => d, None => null },
         },
-        NotFound notFound => new() { Status = nameof(NotFound), LastMatchDiagnostic = notFound.Diagnostic },
+        NotFound notFound => new()
+        {
+            Status = nameof(NotFound),
+            LastMatchDiagnostic = notFound.Diagnostic switch { string d => d, None => null },
+        },
         RetrievalError error => new() { Status = nameof(RetrievalError), LastError = error.ErrorMessage },
         Retrieved retrieved => new()
         {
