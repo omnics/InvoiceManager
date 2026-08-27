@@ -4,7 +4,7 @@ namespace InvoiceManager.TestSupport;
 
 public sealed class FakeFreeAgentBillMatcher : IFreeAgentBillMatcher
 {
-    public FreeAgentBillMatchResult Result { get; set; } = new NoFreeAgentBillMatch();
+    public FreeAgentBillMatchResult Result { get; set; } = new NoFreeAgentBillMatch("No candidate bills.");
 
     public List<FreeAgentBillSearchCriteria> Requests { get; } = [];
 

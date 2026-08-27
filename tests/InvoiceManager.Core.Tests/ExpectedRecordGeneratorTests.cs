@@ -68,7 +68,7 @@ public sealed class ExpectedRecordGeneratorTests
         var config = Configurations.Build(startDate: new DateOnly(2025, 7, 1));
         var existing = Records.Build(config,
             expectedDate: new DateOnly(2025, 7, 1),
-            state: new Expected());
+            state: new Expected(Option.None));
         var records = new InMemoryInvoiceRecordRepository(existing);
         var generator = BuildGenerator(records);
 

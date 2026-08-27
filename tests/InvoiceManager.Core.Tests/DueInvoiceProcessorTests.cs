@@ -166,7 +166,7 @@ public sealed class DueInvoiceProcessorTests
         var dueRecord = Records.Build(config, expectedDate: new DateOnly(2025, 7, 10));
         var records = new InMemoryInvoiceRecordRepository(dueRecord);
 
-        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch());
+        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch("test diagnostic"));
         var processor = BuildProcessor(records, source, new FakeOneDriveIntegration(), config);
 
         await processor.ProcessDueAsync();
@@ -187,12 +187,15 @@ public sealed class DueInvoiceProcessorTests
         var records = new InMemoryInvoiceRecordRepository(dueRecord);
         var oneDrive = new FakeOneDriveIntegration();
 
-        var processor = BuildProcessor(records, new FakeInvoiceSourceIntegration(new NoInvoiceMatch()), oneDrive, config);
+        var processor = BuildProcessor(records, new FakeInvoiceSourceIntegration(new NoInvoiceMatch("test diagnostic")), oneDrive, config);
 
         var results = await processor.ProcessDueAsync();
 
         Assert.True(Assert.Single(results) is ProcessingNoMatch);
-        Assert.True(records.All.Single().State is Expected);
+        var state = records.All.Single().State;
+        Assert.True(
+            state is Expected { LastDiagnostic: string diagnostic } && diagnostic == "test diagnostic",
+            $"Expected Expected with LastDiagnostic 'test diagnostic' but was {state}.");
         Assert.Empty(oneDrive.Uploads);
     }
 
@@ -208,7 +211,7 @@ public sealed class DueInvoiceProcessorTests
             state: new RetrievalError("earlier transient failure"));
         var records = new InMemoryInvoiceRecordRepository(erroredRecord);
 
-        var processor = BuildProcessor(records, new FakeInvoiceSourceIntegration(new NoInvoiceMatch()), new FakeOneDriveIntegration(), config);
+        var processor = BuildProcessor(records, new FakeInvoiceSourceIntegration(new NoInvoiceMatch("test diagnostic")), new FakeOneDriveIntegration(), config);
 
         var results = await processor.ProcessDueAsync();
 
@@ -225,12 +228,12 @@ public sealed class DueInvoiceProcessorTests
         var records = new InMemoryInvoiceRecordRepository(dueRecord);
         var oneDrive = new FakeOneDriveIntegration();
 
-        var processor = BuildProcessor(records, new FakeInvoiceSourceIntegration(new NoInvoiceMatch()), oneDrive, config);
+        var processor = BuildProcessor(records, new FakeInvoiceSourceIntegration(new NoInvoiceMatch("test diagnostic")), oneDrive, config);
 
         var results = await processor.ProcessDueAsync();
 
         Assert.True(Assert.Single(results) is ProcessingNotFound);
-        Assert.True(records.All.Single().State is NotFound);
+        Assert.Equal(new NotFound("test diagnostic"), records.All.Single().State);
         Assert.Empty(oneDrive.Uploads);
     }
 
@@ -240,10 +243,10 @@ public sealed class DueInvoiceProcessorTests
         // Expected 2025-07-01 + 5 day tolerance = deadline 2025-07-06, already elapsed by today (2025-07-15).
         // A still-Expected record processed for the first time after its window goes straight to NotFound.
         var config = Configurations.Build(startDate: new DateOnly(2025, 7, 1));
-        var dueRecord = Records.Build(config, expectedDate: new DateOnly(2025, 7, 1), state: new Expected());
+        var dueRecord = Records.Build(config, expectedDate: new DateOnly(2025, 7, 1), state: new Expected(Option.None));
         var records = new InMemoryInvoiceRecordRepository(dueRecord);
 
-        var processor = BuildProcessor(records, new FakeInvoiceSourceIntegration(new NoInvoiceMatch()), new FakeOneDriveIntegration(), config);
+        var processor = BuildProcessor(records, new FakeInvoiceSourceIntegration(new NoInvoiceMatch("test diagnostic")), new FakeOneDriveIntegration(), config);
 
         var results = await processor.ProcessDueAsync();
 
@@ -260,7 +263,7 @@ public sealed class DueInvoiceProcessorTests
 
         var source = new ThrowingSourceIntegration(
             failFor: new DateOnly(2025, 7, 10),
-            otherwise: new NoInvoiceMatch());
+            otherwise: new NoInvoiceMatch("test diagnostic"));
         var processor = BuildProcessor(records, source, new FakeOneDriveIntegration(), config);
 
         var results = await processor.ProcessDueAsync();
@@ -310,7 +313,7 @@ public sealed class DueInvoiceProcessorTests
             matches: new Dictionary<DateOnly, InvoiceSourceResult>
             {
                 [new DateOnly(2025, 7, 10)] = BuildMatch(new DateOnly(2025, 7, 12), new Money(10.00m, "GBP"), "SRC-1"),
-                [new DateOnly(2025, 7, 1)] = new NoInvoiceMatch(),
+                [new DateOnly(2025, 7, 1)] = new NoInvoiceMatch("test diagnostic"),
             });
         var logger = new ListLogger<DueInvoiceProcessor>();
 
@@ -379,7 +382,7 @@ public sealed class DueInvoiceProcessorTests
         var records = new InMemoryInvoiceRecordRepository(dueRecord);
 
         // The source should never be consulted once OneDrive already has the file.
-        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch());
+        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch("test diagnostic"));
         var oneDrive = new FakeOneDriveIntegration
         {
             NextSearchResult = new OneDriveMatch(
@@ -505,7 +508,7 @@ public sealed class DueInvoiceProcessorTests
         var source = new FakeInvoiceSourceIntegration(
             BuildMatch(new DateOnly(2025, 7, 12), new Money(10.00m, "GBP"), "G152207778"));
         var oneDrive = new FakeOneDriveIntegration();
-        var matcher = new FakeFreeAgentBillMatcher { Result = new NoFreeAgentBillMatch() };
+        var matcher = new FakeFreeAgentBillMatcher { Result = new NoFreeAgentBillMatch("test diagnostic") };
 
         var processor = new DueInvoiceProcessor(
             records,
@@ -525,7 +528,10 @@ public sealed class DueInvoiceProcessorTests
         Assert.True(Assert.Single(results) is ProcessingFreeAgentConflict);
         Assert.DoesNotContain(records.Replaced, r => r.State is SavedToOneDrive);
         var stored = records.All.Single(r => r.Id == dueRecord.Id);
-        Assert.True(stored.State is FreeAgentMatchExpected, $"Expected FreeAgentMatchExpected but was {stored.State}.");
+        Assert.True(
+            stored.State is FreeAgentMatchExpected { LastMatchDiagnostic: string matchDiagnostic } &&
+                matchDiagnostic == "test diagnostic",
+            $"Expected FreeAgentMatchExpected with LastMatchDiagnostic 'test diagnostic' but was {stored.State}.");
         Assert.Single(matcher.Requests);
 
         // Save path already has the PDF bytes in hand, so no re-download is needed.
@@ -552,8 +558,8 @@ public sealed class DueInvoiceProcessorTests
                 Actuals.Build(new DateOnly(2025, 7, 12), new Money(10.00m, "GBP"), new SourceInvoiceId("G152207778")),
                 "matched by date and amount"),
         };
-        var matcher = new FakeFreeAgentBillMatcher { Result = new NoFreeAgentBillMatch() };
-        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch());
+        var matcher = new FakeFreeAgentBillMatcher { Result = new NoFreeAgentBillMatch("test diagnostic") };
+        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch("test diagnostic"));
 
         var processor = new DueInvoiceProcessor(
             records,
@@ -596,7 +602,7 @@ public sealed class DueInvoiceProcessorTests
         var matchExpectedRecord = Records.Build(
             config,
             expectedDate: new DateOnly(2025, 7, 10),
-            state: new FreeAgentMatchExpected(actualDetails, oneDriveDetails));
+            state: new FreeAgentMatchExpected(actualDetails, oneDriveDetails, Option.None));
         var records = new InMemoryInvoiceRecordRepository(matchExpectedRecord);
 
         var billIdentity = new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1");
@@ -607,7 +613,7 @@ public sealed class DueInvoiceProcessorTests
         var matcher = new FakeFreeAgentBillMatcher { Result = new FreeAgentBillFound(bill) };
         var attachment = new FreeAgentAttachmentMetadata("invoice.pdf", 3, "application/pdf", Today.ToDateTime(TimeOnly.MinValue));
         var uploader = new FakeFreeAgentAttachmentUploader { Upload = (_, _, _) => new FreeAgentAttachmentUploaded(attachment) };
-        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch());
+        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch("test diagnostic"));
         var oneDrive = new FakeOneDriveIntegration();
 
         var processor = new DueInvoiceProcessor(
@@ -653,8 +659,8 @@ public sealed class DueInvoiceProcessorTests
             state: new FreeAgentError(actualDetails, oneDriveDetails, "earlier failure", Option.None));
         var records = new InMemoryInvoiceRecordRepository(erroredRecord);
 
-        var matcher = new FakeFreeAgentBillMatcher { Result = new NoFreeAgentBillMatch() };
-        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch());
+        var matcher = new FakeFreeAgentBillMatcher { Result = new NoFreeAgentBillMatch("test diagnostic") };
+        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch("test diagnostic"));
         var oneDrive = new FakeOneDriveIntegration();
 
         var processor = new DueInvoiceProcessor(
@@ -694,14 +700,14 @@ public sealed class DueInvoiceProcessorTests
         var matchExpectedRecord = Records.Build(
             config,
             expectedDate: new DateOnly(2025, 7, 10),
-            state: new FreeAgentMatchExpected(actualDetails, oneDriveDetails));
+            state: new FreeAgentMatchExpected(actualDetails, oneDriveDetails, Option.None));
         var records = new InMemoryInvoiceRecordRepository(matchExpectedRecord);
 
         var oneDrive = new FakeOneDriveIntegration
         {
             DownloadException = new InvalidOperationException("The file has been deleted."),
         };
-        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch());
+        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch("test diagnostic"));
 
         var processor = new DueInvoiceProcessor(
             records,
@@ -748,7 +754,7 @@ public sealed class DueInvoiceProcessorTests
         var matchExpectedRecord = Records.Build(
             config,
             expectedDate: new DateOnly(2025, 7, 10),
-            state: new FreeAgentMatchExpected(actualDetails, oneDriveDetails));
+            state: new FreeAgentMatchExpected(actualDetails, oneDriveDetails, Option.None));
         var records = new InMemoryInvoiceRecordRepository(matchExpectedRecord);
 
         var billIdentity = new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1");
@@ -761,7 +767,7 @@ public sealed class DueInvoiceProcessorTests
         {
             DateReconciliation = (_, _) => throw new InvalidOperationException("FreeAgent is temporarily unavailable."),
         };
-        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch());
+        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch("test diagnostic"));
         var oneDrive = new FakeOneDriveIntegration();
 
         var processor = new DueInvoiceProcessor(
@@ -826,7 +832,7 @@ public sealed class DueInvoiceProcessorTests
         {
             DateReconciliation = (_, _) => throw new InvalidOperationException("FreeAgent is temporarily unavailable."),
         };
-        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch());
+        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch("test diagnostic"));
         var oneDrive = new FakeOneDriveIntegration { DownloadResult = [1, 2, 3] };
 
         var processor = new DueInvoiceProcessor(
@@ -896,7 +902,7 @@ public sealed class DueInvoiceProcessorTests
             actualDetails.ActualAmount, new Money(0m, "GBP"), actualDetails.ActualAmount, Option.None,
             matching.Contact.Url, "REF-1", [], Option.None);
         var matcher = new FakeFreeAgentBillMatcher { Result = new FreeAgentBillFound(bill) };
-        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch());
+        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch("test diagnostic"));
         var oneDrive = new FakeOneDriveIntegration { DownloadResult = [1, 2, 3] };
 
         var attached = new FreeAgentAttachmentMetadata("invoice.pdf", 3, "application/pdf", Today.ToDateTime(TimeOnly.MinValue));
@@ -962,7 +968,7 @@ public sealed class DueInvoiceProcessorTests
             actualDetails.ActualAmount, new Money(0m, "GBP"), actualDetails.ActualAmount, Option.None,
             matching.Contact.Url, "REF-2", [], Option.None);
         var matcher = new FakeFreeAgentBillMatcher { Result = new FreeAgentBillFound(bill) };
-        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch());
+        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch("test diagnostic"));
         var oneDrive = new FakeOneDriveIntegration { DownloadResult = [1, 2, 3] };
 
         var attached = new FreeAgentAttachmentMetadata("invoice.pdf", 3, "application/pdf", Today.ToDateTime(TimeOnly.MinValue));
@@ -1006,7 +1012,7 @@ public sealed class DueInvoiceProcessorTests
         var matchExpectedRecord = Records.Build(
             config,
             expectedDate: new DateOnly(2025, 7, 10),
-            state: new FreeAgentMatchExpected(actualDetails, oneDriveDetails));
+            state: new FreeAgentMatchExpected(actualDetails, oneDriveDetails, Option.None));
         var records = new ThrowingOnReplaceStateRepository(matchExpectedRecord, state => state is FreeAgentAttached);
 
         var billIdentity = new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1");
@@ -1015,7 +1021,7 @@ public sealed class DueInvoiceProcessorTests
             actualDetails.ActualAmount, new Money(0m, "GBP"), actualDetails.ActualAmount, Option.None,
             matching.Contact.Url, "REF-1", [], Option.None);
         var matcher = new FakeFreeAgentBillMatcher { Result = new FreeAgentBillFound(bill) };
-        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch());
+        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch("test diagnostic"));
         var oneDrive = new FakeOneDriveIntegration();
 
         var attached = new FreeAgentAttachmentMetadata("invoice.pdf", 3, "application/pdf", Today.ToDateTime(TimeOnly.MinValue));
@@ -1083,7 +1089,7 @@ public sealed class DueInvoiceProcessorTests
             actualDetails.ActualAmount, new Money(0m, "GBP"), actualDetails.ActualAmount, Option.None,
             matching.Contact.Url, "REF-1", [], Option.None);
         var matcher = new FakeFreeAgentBillMatcher { Result = new FreeAgentBillFound(bill) };
-        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch());
+        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch("test diagnostic"));
         var oneDrive = new FakeOneDriveIntegration { DownloadResult = [1, 2, 3] };
 
         var attached = new FreeAgentAttachmentMetadata("invoice.pdf", 3, "application/pdf", Today.ToDateTime(TimeOnly.MinValue));

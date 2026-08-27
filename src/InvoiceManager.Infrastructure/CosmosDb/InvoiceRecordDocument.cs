@@ -128,6 +128,13 @@ internal sealed class InvoiceRecordDocument
     [JsonPropertyName("lastError")]
     public string? LastError { get; init; }
 
+    // Required for NotFound (always populated by the attempt that produced it).
+    // Present but optional for Expected and FreeAgentMatchExpected: why the most
+    // recent match attempt found nothing (or was ambiguous), absent when no
+    // attempt has happened yet.
+    [JsonPropertyName("lastMatchDiagnostic")]
+    public string? LastMatchDiagnostic { get; init; }
+
     // Present only for the ReconciledFromOneDrive state: why the existing file was
     // accepted and when reconciliation occurred (ISO 8601 round-trip).
     [JsonPropertyName("matchReason")]
@@ -172,6 +179,7 @@ internal sealed class InvoiceRecordDocument
             ActualInvoiceDetails = fields.ActualDetails,
             OneDriveDetails = fields.OneDriveDetails,
             LastError = fields.LastError,
+            LastMatchDiagnostic = fields.LastMatchDiagnostic,
             MatchReason = fields.MatchReason,
             ReconciledAt = fields.ReconciledAt,
             FreeAgentBillUrl = fields.FreeAgentBillUrl,
@@ -182,8 +190,8 @@ internal sealed class InvoiceRecordDocument
 
     private InvoiceWorkflowState ToState() => Status switch
     {
-        nameof(Expected) => new Expected(),
-        nameof(NotFound) => new NotFound(),
+        nameof(Expected) => new Expected(LastMatchDiagnostic is { } expectedDiagnostic ? expectedDiagnostic : Option.None),
+        nameof(NotFound) => new NotFound(RequiredLastMatchDiagnostic()),
         nameof(RetrievalError) => new RetrievalError(LastError ?? string.Empty),
         nameof(Retrieved) => new Retrieved(RequiredActualDetails()),
         nameof(ReconciledFromOneDrive) => new ReconciledFromOneDrive(
@@ -192,7 +200,10 @@ internal sealed class InvoiceRecordDocument
             RequiredMatchReason(),
             RequiredReconciledAt()),
         nameof(SavedToOneDrive) => new SavedToOneDrive(RequiredActualDetails(), RequiredOneDriveDetails()),
-        nameof(FreeAgentMatchExpected) => new FreeAgentMatchExpected(RequiredActualDetails(), RequiredOneDriveDetails()),
+        nameof(FreeAgentMatchExpected) => new FreeAgentMatchExpected(
+            RequiredActualDetails(),
+            RequiredOneDriveDetails(),
+            LastMatchDiagnostic is { } matchExpectedDiagnostic ? matchExpectedDiagnostic : Option.None),
         nameof(FreeAgentBillMatched) => new FreeAgentBillMatched(
             RequiredActualDetails(), RequiredOneDriveDetails(), RequiredFreeAgentBillIdentity()),
         nameof(FreeAgentBillReconciled) => new FreeAgentBillReconciled(
@@ -237,6 +248,11 @@ internal sealed class InvoiceRecordDocument
             : throw new InvalidOperationException(
                 $"Invoice record document '{Id}' has status '{Status}' but is missing 'freeAgentInterventionId'.");
 
+    private string RequiredLastMatchDiagnostic() =>
+        LastMatchDiagnostic
+        ?? throw new InvalidOperationException(
+            $"Invoice record document '{Id}' has status '{Status}' but is missing 'lastMatchDiagnostic'.");
+
     private string RequiredMatchReason() =>
         MatchReason
         ?? throw new InvalidOperationException(
@@ -250,8 +266,12 @@ internal sealed class InvoiceRecordDocument
 
     private static StorageFieldSet StorageFields(InvoiceWorkflowState state) => state switch
     {
-        Expected => new() { Status = nameof(Expected) },
-        NotFound => new() { Status = nameof(NotFound) },
+        Expected expected => new()
+        {
+            Status = nameof(Expected),
+            LastMatchDiagnostic = expected.LastDiagnostic switch { string d => d, None => null },
+        },
+        NotFound notFound => new() { Status = nameof(NotFound), LastMatchDiagnostic = notFound.Diagnostic },
         RetrievalError error => new() { Status = nameof(RetrievalError), LastError = error.ErrorMessage },
         Retrieved retrieved => new()
         {
@@ -277,6 +297,7 @@ internal sealed class InvoiceRecordDocument
             Status = nameof(FreeAgentMatchExpected),
             ActualDetails = ActualInvoiceDetailsDocument.FromDetails(matchExpected.ActualDetails),
             OneDriveDetails = OneDriveDetailsDocument.FromDetails(matchExpected.OneDriveDetails),
+            LastMatchDiagnostic = matchExpected.LastMatchDiagnostic switch { string d => d, None => null },
         },
         FreeAgentBillMatched matched => new()
         {
@@ -328,6 +349,7 @@ internal sealed class InvoiceRecordDocument
         public ActualInvoiceDetailsDocument? ActualDetails { get; init; }
         public OneDriveDetailsDocument? OneDriveDetails { get; init; }
         public string? LastError { get; init; }
+        public string? LastMatchDiagnostic { get; init; }
         public string? MatchReason { get; init; }
         public string? ReconciledAt { get; init; }
         public string? FreeAgentBillUrl { get; init; }

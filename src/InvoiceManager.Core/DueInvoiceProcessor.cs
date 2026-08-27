@@ -206,7 +206,10 @@ public sealed class DueInvoiceProcessor(
         }
 
         if (result is not InvoiceMatch match)
-            return await RecordNoMatchAsync(record, asOf, recordActivity, cancellationToken);
+        {
+            var diagnostic = result is NoInvoiceMatch noMatch ? noMatch.Diagnostic : string.Empty;
+            return await RecordNoMatchAsync(record, asOf, diagnostic, recordActivity, cancellationToken);
+        }
 
         // Retrieved: persist before saving so a later run resumes from here.
         var retrieved = record with { State = new Retrieved(match.Details) };
@@ -233,7 +236,10 @@ public sealed class DueInvoiceProcessor(
         // state the due query has stopped re-selecting (see docs/workflow-states.md).
         if (snapshot.FreeAgentMatching is FreeAgentBillMatching matching)
         {
-            var matchExpected = retrieved with { State = new FreeAgentMatchExpected(match.Details, oneDriveDetails) };
+            var matchExpected = retrieved with
+            {
+                State = new FreeAgentMatchExpected(match.Details, oneDriveDetails, Option.None),
+            };
             await recordRepository.ReplaceAsync(matchExpected, cancellationToken);
             recordActivity?.AddEvent(new ActivityEvent("state_freeagent_match_expected"));
 
@@ -345,15 +351,22 @@ public sealed class DueInvoiceProcessor(
         FreeAgentBillFound billFound;
         switch (matchResult)
         {
-            case NoFreeAgentBillMatch:
+            case NoFreeAgentBillMatch noMatch:
                 // Clears a prior FreeAgentError back to FreeAgentMatchExpected so the next
                 // retry re-attempts matching instead of resuming an error message that no
-                // longer applies; a no-op write when already FreeAgentMatchExpected.
-                await EnsureFreeAgentMatchExpectedAsync(savedRecord, actualDetails, oneDriveDetails, cancellationToken);
-                logger.LogInformation("No FreeAgent bill matched record {RecordId}.", savedRecord.Id);
+                // longer applies. Always written (not just on a state change) since a repeat
+                // no-match attempt still carries fresh diagnostic detail worth persisting.
+                await EnsureFreeAgentMatchExpectedAsync(
+                    savedRecord, actualDetails, oneDriveDetails, noMatch.Diagnostic, cancellationToken);
+                logger.LogInformation(
+                    "No FreeAgent bill matched record {RecordId}: {Diagnostic}", savedRecord.Id, noMatch.Diagnostic);
                 return new ProcessingFreeAgentConflict(savedRecord.Id, "No FreeAgent bill matched the invoice.");
             case AmbiguousFreeAgentBillMatch ambiguous:
-                await EnsureFreeAgentMatchExpectedAsync(savedRecord, actualDetails, oneDriveDetails, cancellationToken);
+                var ambiguousDiagnostic =
+                    $"{ambiguous.Candidates.Count} FreeAgent bills matched (ambiguous): " +
+                    $"{string.Join(", ", ambiguous.Candidates.Select(c => c.Url))}.";
+                await EnsureFreeAgentMatchExpectedAsync(
+                    savedRecord, actualDetails, oneDriveDetails, ambiguousDiagnostic, cancellationToken);
                 logger.LogWarning(
                     "{CandidateCount} FreeAgent bills matched record {RecordId}; never choosing among candidates.",
                     ambiguous.Candidates.Count, savedRecord.Id);
@@ -643,19 +656,23 @@ public sealed class DueInvoiceProcessor(
     }
 
     /// <summary>
-    /// Ensures the record is at <see cref="FreeAgentMatchExpected"/>, writing it only when the
-    /// current state differs (clearing a prior <see cref="FreeAgentError"/>; a no-op otherwise).
+    /// Ensures the record is at <see cref="FreeAgentMatchExpected"/>, carrying
+    /// <paramref name="lastMatchDiagnostic"/> from the attempt that just failed to
+    /// match - always written, even when already in this state, since a repeat
+    /// no-match attempt still produces fresh diagnostic detail worth persisting
+    /// (clears a prior <see cref="FreeAgentError"/> the same way).
     /// </summary>
     private async Task EnsureFreeAgentMatchExpectedAsync(
         InvoiceRecord record,
         ActualInvoiceDetails actualDetails,
         OneDriveDetails oneDriveDetails,
+        Option<string> lastMatchDiagnostic,
         CancellationToken cancellationToken)
     {
-        if (record.State is FreeAgentMatchExpected)
-            return;
-
-        var matchExpected = record with { State = new FreeAgentMatchExpected(actualDetails, oneDriveDetails) };
+        var matchExpected = record with
+        {
+            State = new FreeAgentMatchExpected(actualDetails, oneDriveDetails, lastMatchDiagnostic),
+        };
         await recordRepository.ReplaceAsync(matchExpected, cancellationToken);
     }
 
@@ -693,7 +710,7 @@ public sealed class DueInvoiceProcessor(
         {
             var matchExpected = record with
             {
-                State = new FreeAgentMatchExpected(match.Details, match.OneDriveDetails),
+                State = new FreeAgentMatchExpected(match.Details, match.OneDriveDetails, Option.None),
             };
             await recordRepository.ReplaceAsync(matchExpected, cancellationToken);
             recordActivity?.AddEvent(new ActivityEvent("state_freeagent_match_expected"));
@@ -750,11 +767,15 @@ public sealed class DueInvoiceProcessor(
     /// clean poll returns no match); on or after the deadline it is set to the
     /// terminal <see cref="NotFound"/>. Because the deadline is checked against
     /// every run, a record processed for the first time after its window has
-    /// elapsed goes straight to <see cref="NotFound"/>.
+    /// elapsed goes straight to <see cref="NotFound"/>. <paramref name="diagnostic"/>
+    /// (the source integration's explanation of why nothing matched) is always
+    /// persisted, even when otherwise a no-op, since a repeat no-match attempt
+    /// still carries fresh diagnostic detail worth keeping.
     /// </summary>
     private async Task<DueInvoiceProcessingResult> RecordNoMatchAsync(
         InvoiceRecord record,
         DateOnly asOf,
+        string diagnostic,
         Activity? recordActivity,
         CancellationToken cancellationToken)
     {
@@ -762,25 +783,24 @@ public sealed class DueInvoiceProcessor(
 
         if (asOf < deadline)
         {
-            // Only write when the state actually changes (e.g. clearing a prior
-            // RetrievalError); an already-Expected record needs no write.
-            if (record.State is not Expected)
-                await recordRepository.ReplaceAsync(record with { State = new Expected() }, cancellationToken);
+            await recordRepository.ReplaceAsync(record with { State = new Expected(diagnostic) }, cancellationToken);
             recordActivity?.AddEvent(new ActivityEvent("no_match_within_tolerance"));
             logger.LogInformation(
-                "No invoice match found yet for record {RecordId}; still expected, within tolerance until {Deadline}.",
+                "No invoice match found yet for record {RecordId}; still expected, within tolerance until {Deadline}: {Diagnostic}",
                 record.Id,
-                deadline);
+                deadline,
+                diagnostic);
             return new ProcessingNoMatch(record.Id);
         }
 
-        var notFound = record with { State = new NotFound() };
+        var notFound = record with { State = new NotFound(diagnostic) };
         await recordRepository.ReplaceAsync(notFound, cancellationToken);
         recordActivity?.AddEvent(new ActivityEvent("state_not_found_past_deadline"));
         logger.LogWarning(
-            "No invoice match found for record {RecordId} by tolerance deadline {Deadline}; marked NotFound.",
+            "No invoice match found for record {RecordId} by tolerance deadline {Deadline}; marked NotFound: {Diagnostic}",
             record.Id,
-            deadline);
+            deadline,
+            diagnostic);
         return new ProcessingNotFound(record.Id);
     }
 
