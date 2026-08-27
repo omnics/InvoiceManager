@@ -9,13 +9,15 @@ namespace InvoiceManager.Core;
 /// <summary>
 /// Processes invoice records that are due for retrieval: for each due record it
 /// asks the matching source integration for the invoice and saves it to OneDrive.
-/// Records that are not yet available stay <see cref="Expected"/> (retried on
-/// later runs) until their tolerance window elapses, after which they move to
+/// Only records whose configuration is active are considered (see
+/// <see cref="ProcessDueAsync"/>). Records that are not yet available stay
+/// <see cref="Expected"/> (retried on a later run of the same active
+/// configuration) until their tolerance window elapses, after which they move to
 /// the terminal <see cref="NotFound"/>. A technical failure moves the record to
-/// <see cref="RetrievalError"/> (always retried) and is isolated so the other
-/// records still run. State is persisted after each step so a later run can
-/// continue without repeating completed work. Structured telemetry is emitted
-/// per record and as a run summary.
+/// <see cref="RetrievalError"/> (retried the same way) and is isolated so the
+/// other records still run. State is persisted after each step so a later run
+/// can continue without repeating completed work. Structured telemetry is
+/// emitted per record and as a run summary.
 /// </summary>
 /// <remarks>
 /// Does not create the next expected record itself - <see cref="ExpectedRecordGenerator"/>
