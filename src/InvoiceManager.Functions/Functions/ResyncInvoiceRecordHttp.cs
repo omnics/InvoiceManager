@@ -27,17 +27,16 @@ public sealed class ResyncInvoiceRecordHttp(
         CancellationToken cancellationToken)
     {
         var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
-        var configurationId = query["configurationId"];
-        var integrationTypeText = query["integrationType"];
 
-        if (string.IsNullOrWhiteSpace(configurationId) ||
-            !Enum.TryParse<IntegrationType>(integrationTypeText, out var integrationType))
+        if (ParseRequest(query["configurationId"], query["integrationType"]) is not ParsedRequest parsed)
         {
             var badRequest = req.CreateResponse(HttpStatusCode.BadRequest);
             await badRequest.WriteStringAsync(
                 "Both 'configurationId' and a valid 'integrationType' query parameters are required.", cancellationToken);
             return badRequest;
         }
+
+        var (configurationId, integrationType) = parsed;
 
         logger.LogInformation(
             "Invoice record resync triggered by HTTP request for configuration {ConfigurationId}.", configurationId);
@@ -60,6 +59,29 @@ public sealed class ResyncInvoiceRecordHttp(
         await response.WriteStringAsync(JsonSerializer.Serialize(body, SerializerOptions), cancellationToken);
         return response;
     }
+
+    /// <summary>
+    /// Validates the request's query parameters, extracted for direct unit testing since
+    /// <see cref="HttpRequestData"/> requires a full Functions host context to construct.
+    /// Rejects an <paramref name="integrationTypeText"/> that parses to an undefined numeric
+    /// value (for example "999") as well as a missing/unrecognised name - <see cref="Enum.TryParse{TEnum}(string?,out TEnum)"/>
+    /// alone accepts any integer-parseable string for a non-flags enum, defined or not.
+    /// </summary>
+    public static ParsedRequest? ParseRequest(string? configurationId, string? integrationTypeText)
+    {
+        if (string.IsNullOrWhiteSpace(configurationId))
+            return null;
+
+        if (!Enum.TryParse<IntegrationType>(integrationTypeText, out var integrationType) ||
+            !Enum.IsDefined(integrationType))
+        {
+            return null;
+        }
+
+        return new ParsedRequest(configurationId, integrationType);
+    }
+
+    public sealed record ParsedRequest(string ConfigurationId, IntegrationType IntegrationType);
 
     private sealed record ResyncResultDto(string Outcome, string? RecordId);
 }

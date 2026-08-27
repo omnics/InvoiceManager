@@ -61,7 +61,8 @@ public sealed class IndexModelExportTests
     {
         public Task<InvoiceRecordResyncTriggerResult> TriggerAsync(
             InvoiceConfigurationId configurationId, IntegrationType integrationType, CancellationToken cancellationToken) =>
-            Task.FromResult<InvoiceRecordResyncTriggerResult>(new InvoiceRecordResyncTriggered("Succeeded", null));
+            Task.FromResult<InvoiceRecordResyncTriggerResult>(
+                new InvoiceRecordResyncTriggerSucceeded(new InvoiceRecordId("test-record")));
     }
 
     private sealed class FakeMicrosoftAuthorizationStore(bool hasTokenCache) : IMicrosoftAuthorizationStore

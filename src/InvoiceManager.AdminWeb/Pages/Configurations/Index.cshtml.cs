@@ -60,14 +60,13 @@ public sealed class IndexModel(
         var result = await resyncTrigger.TriggerAsync(new(id), integrationType, HttpContext.RequestAborted);
         TempData["StatusMessage"] = result switch
         {
-            InvoiceRecordResyncTriggered { Outcome: "Succeeded" } =>
+            InvoiceRecordResyncTriggerSucceeded =>
                 "The most recent record was refreshed from the current configuration and will retry on the next run.",
-            InvoiceRecordResyncTriggered { Outcome: "NoRecordExists" } =>
+            InvoiceRecordResyncTriggerNoRecordExists =>
                 "This configuration has no record yet, so there is nothing to resync.",
-            InvoiceRecordResyncTriggered { Outcome: "NotEligible" } =>
+            InvoiceRecordResyncTriggerNotEligible =>
                 "The most recent record has already progressed past matching, so it was not resynced.",
-            InvoiceRecordResyncTriggered { Outcome: "ConfigurationNotFound" } => "Configuration not found.",
-            InvoiceRecordResyncTriggered triggered => $"Unrecognised resync outcome: {triggered.Outcome}.",
+            InvoiceRecordResyncTriggerConfigurationNotFound => "Configuration not found.",
             InvoiceRecordResyncNotConfigured =>
                 "The Functions app URL is not configured, so the resync could not be triggered.",
             InvoiceRecordResyncFailed failed => $"The resync could not be triggered. {failed.Message}",
