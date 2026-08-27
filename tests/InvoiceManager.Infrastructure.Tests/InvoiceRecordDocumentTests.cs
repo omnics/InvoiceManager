@@ -174,13 +174,15 @@ public sealed class InvoiceRecordDocumentTests
     }
 
     [Fact]
-    public void ToRecord_DefaultsToNoDiagnostic_WhenNotFoundDocumentPredatesTheField()
+    public void ToRecord_Throws_WhenNotFoundIsMissingLastMatchDiagnostic()
     {
         var document = BuildDocument(status: "NotFound");
 
-        var record = document.ToRecord();
-
-        Assert.Equal(new NotFound(Option.None), record.State);
+        var ex = Assert.Throws<InvalidOperationException>(() => document.ToRecord());
+        Assert.Equal(
+            "Invoice record document 'config-1_2025-07-01' has status 'NotFound' " +
+            "but is missing 'lastMatchDiagnostic'.",
+            ex.Message);
     }
 
     [Fact]

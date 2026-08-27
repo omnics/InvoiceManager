@@ -215,15 +215,20 @@ public sealed class GraphEmailInvoiceSource(
                 $"readable PDF attachment matching the expected amount {amountDescription}.";
         }
 
+        // Different rejected candidates can fail for different reasons (one on date, another
+        // on amount) - the sentence below only ever attributes a specific reason to the
+        // nearest candidate, never generalizes one candidate's rejection reason to the whole
+        // rejected set.
         var nearest = rejectedCandidates.OrderBy(candidate => criteria.DateDistanceDays(candidate.Date)).First();
-        var rejectionReason = nearest.WithinDateTolerance
+        var nearestRejectionReason = nearest.WithinDateTolerance
             ? $"the expected amount {amountDescription}"
             : $"the {criteria.DateToleranceDays}-day invoice-date tolerance around {criteria.ExpectedDate:yyyy-MM-dd}";
 
         return $"{candidateCount} email(s) from {email.SenderEmailAddress} matched the date window " +
             $"({windowStart:yyyy-MM-dd} to {windowEnd:yyyy-MM-dd}) and {bodyPatternDescription}; " +
-            $"{rejectedCandidates.Count} PDF attachment(s) extracted but none matched {rejectionReason}; " +
-            $"nearest was dated {nearest.Date:yyyy-MM-dd} for {nearest.Total.Amount} {nearest.Total.Currency}.";
+            $"{rejectedCandidates.Count} PDF attachment(s) extracted but none satisfied the search criteria; " +
+            $"nearest was dated {nearest.Date:yyyy-MM-dd} for {nearest.Total.Amount} {nearest.Total.Currency}, " +
+            $"which did not satisfy {nearestRejectionReason}.";
     }
 
     /// <summary>

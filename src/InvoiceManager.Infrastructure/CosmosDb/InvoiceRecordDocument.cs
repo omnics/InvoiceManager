@@ -128,11 +128,10 @@ internal sealed class InvoiceRecordDocument
     [JsonPropertyName("lastError")]
     public string? LastError { get; init; }
 
-    // Present for Expected, NotFound, and FreeAgentMatchExpected: why the most
-    // recent match attempt found nothing (or was ambiguous). Absent on Expected
-    // and FreeAgentMatchExpected when no attempt has happened yet, and on
-    // documents written before this field existed - both read back as "no
-    // diagnostic yet" rather than an error.
+    // Required for NotFound (always populated by the attempt that produced it).
+    // Present but optional for Expected and FreeAgentMatchExpected: why the most
+    // recent match attempt found nothing (or was ambiguous), absent when no
+    // attempt has happened yet.
     [JsonPropertyName("lastMatchDiagnostic")]
     public string? LastMatchDiagnostic { get; init; }
 
@@ -192,7 +191,7 @@ internal sealed class InvoiceRecordDocument
     private InvoiceWorkflowState ToState() => Status switch
     {
         nameof(Expected) => new Expected(LastMatchDiagnostic is { } expectedDiagnostic ? expectedDiagnostic : Option.None),
-        nameof(NotFound) => new NotFound(LastMatchDiagnostic is { } notFoundDiagnostic ? notFoundDiagnostic : Option.None),
+        nameof(NotFound) => new NotFound(RequiredLastMatchDiagnostic()),
         nameof(RetrievalError) => new RetrievalError(LastError ?? string.Empty),
         nameof(Retrieved) => new Retrieved(RequiredActualDetails()),
         nameof(ReconciledFromOneDrive) => new ReconciledFromOneDrive(
@@ -249,6 +248,11 @@ internal sealed class InvoiceRecordDocument
             : throw new InvalidOperationException(
                 $"Invoice record document '{Id}' has status '{Status}' but is missing 'freeAgentInterventionId'.");
 
+    private string RequiredLastMatchDiagnostic() =>
+        LastMatchDiagnostic
+        ?? throw new InvalidOperationException(
+            $"Invoice record document '{Id}' has status '{Status}' but is missing 'lastMatchDiagnostic'.");
+
     private string RequiredMatchReason() =>
         MatchReason
         ?? throw new InvalidOperationException(
@@ -267,11 +271,7 @@ internal sealed class InvoiceRecordDocument
             Status = nameof(Expected),
             LastMatchDiagnostic = expected.LastDiagnostic switch { string d => d, None => null },
         },
-        NotFound notFound => new()
-        {
-            Status = nameof(NotFound),
-            LastMatchDiagnostic = notFound.Diagnostic switch { string d => d, None => null },
-        },
+        NotFound notFound => new() { Status = nameof(NotFound), LastMatchDiagnostic = notFound.Diagnostic },
         RetrievalError error => new() { Status = nameof(RetrievalError), LastError = error.ErrorMessage },
         Retrieved retrieved => new()
         {

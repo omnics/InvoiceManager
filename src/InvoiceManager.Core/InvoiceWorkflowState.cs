@@ -18,12 +18,8 @@ public sealed record Expected(Option<string> LastDiagnostic);
 /// <summary>
 /// The invoice could not be found on or after the configured tolerance deadline.
 /// </summary>
-/// <param name="Diagnostic">
-/// Why the deadline-time attempt found nothing - <see cref="Core.None"/> only for a
-/// terminal record persisted before this field existed (it can never be populated
-/// after the fact, since <see cref="NotFound"/> is not retried).
-/// </param>
-public sealed record NotFound(Option<string> Diagnostic);
+/// <param name="Diagnostic">Why the deadline-time attempt found nothing.</param>
+public sealed record NotFound(string Diagnostic);
 
 /// <summary>
 /// A retrieval attempt failed with a technical error, so the system could not

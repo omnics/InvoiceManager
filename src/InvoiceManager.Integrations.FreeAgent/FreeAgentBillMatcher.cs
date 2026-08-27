@@ -86,9 +86,19 @@ internal sealed class FreeAgentBillMatcher : IFreeAgentBillMatcher
                 $"and {windowEnd:yyyy-MM-dd}. Expected amount: {amountDescription}.";
         }
 
-        var nearest = candidates
+        // Prefer a same-currency candidate for "nearest" - subtracting raw decimals across
+        // currencies (e.g. 100 USD vs 100 GBP) would call a numerically-close foreign amount
+        // "nearest" when it was never a real candidate (MatchesAmount already rejects it on
+        // currency alone). Only fall back to a different-currency candidate when no
+        // same-currency total exists at all, so the diagnostic still reports something.
+        var parsable = candidates
             .Where(bill => bill.TotalValue is not null &&
                 decimal.TryParse(bill.TotalValue, System.Globalization.CultureInfo.InvariantCulture, out _))
+            .ToList();
+        var sameCurrency = parsable
+            .Where(bill => string.Equals(bill.Currency, expected.Currency.Code, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var nearest = (sameCurrency.Count > 0 ? sameCurrency : parsable)
             .OrderBy(bill => Math.Abs(
                 decimal.Parse(bill.TotalValue!, System.Globalization.CultureInfo.InvariantCulture) - expected.Amount))
             .FirstOrDefault();

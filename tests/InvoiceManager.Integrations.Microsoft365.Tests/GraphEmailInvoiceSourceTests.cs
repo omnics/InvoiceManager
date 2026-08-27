@@ -169,6 +169,43 @@ public sealed class GraphEmailInvoiceSourceTests
     }
 
     [Fact]
+    public async Task FindInvoiceAsync_DiagnosticAttributesReason_OnlyToNearestCandidate_WhenRejectionReasonsDiffer()
+    {
+        // Two rejected candidates fail for different reasons: the closer one (by extracted
+        // invoice date) only fails on amount, the further one only fails on date. The
+        // diagnostic must not generalize one candidate's rejection reason ("amount" or "date")
+        // to the whole rejected set - only the nearest candidate's actual reason is reported.
+        var handler = MessagesThenAttachments(
+            Messages(
+                ("msg-1", "2025-07-12", "Your invoice is attached."),
+                ("msg-2", "2025-07-12", "Your invoice is attached.")),
+            ("msg-1", Attachments(("att-1", SinglePdfBytes))),
+            ("msg-2", Attachments(("att-2", SecondPdfBytes))));
+        var extractor = new FakePdfExtractor(content =>
+            content.SequenceEqual(SinglePdfBytes)
+                // Closest to ExpectedDate (2025-07-10): fails on amount only.
+                ? new PdfExtractionSucceeded(new DateOnly(2025, 7, 12), new Money(99.99m, "GBP"))
+                // Far from ExpectedDate: fails on date only (amount happens to be correct).
+                : new PdfExtractionSucceeded(new DateOnly(2025, 8, 1), new Money(11.59m, "GBP")));
+        var source = Build(handler, extractor);
+
+        var result = await source.FindInvoiceAsync(Criteria(
+            amountMatchingCriteria: new AmountMatchingCriteria(new Money(11.59m, "GBP"), 0m)));
+
+        if (result is not NoInvoiceMatch noMatch)
+        {
+            Assert.Fail($"Expected NoInvoiceMatch but got {result}.");
+            return;
+        }
+
+        // The nearest candidate (07-12, 99.99) failed on amount - that reason must be
+        // reported, not the further candidate's date-tolerance failure.
+        Assert.Contains("99.99", noMatch.Diagnostic);
+        Assert.Contains("expected amount", noMatch.Diagnostic);
+        Assert.DoesNotContain("date tolerance", noMatch.Diagnostic);
+    }
+
+    [Fact]
     public async Task FindInvoiceAsync_SkipsCandidateWithWrongAmount_AndAcceptsAFurtherCandidateThatMatches()
     {
         var handler = MessagesThenAttachments(
