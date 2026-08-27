@@ -39,9 +39,11 @@ follows:
    invoice.
 8. Save the retrieved invoice to OneDrive.
 9. Continue with FreeAgent attachment behavior.
-10. Create the next expected invoice record once the configured success state is
-   reached.
-11. Persist state and telemetry after each meaningful step.
+10. Persist state and telemetry after each meaningful step.
+
+A separate pass, run immediately before this one on every trigger, creates the
+next expected invoice record for any configuration whose most recent record has
+reached a success state (see [Implementation status](#implementation-status)).
 
 FreeAgent behavior is intentionally left at a high level here and should be
 expanded when the FreeAgent integration is designed in detail.
@@ -50,11 +52,16 @@ expanded when the FreeAgent integration is designed in detail.
 
 The Microsoft 365 happy path is implemented: `DueInvoiceProcessor` loads due
 records (steps 1–2), retrieves a match from the Microsoft 365 source integration
-(steps 5, 7), saves the PDF to OneDrive (step 8), and creates the next expected
-record (step 10), persisting after each step (`Expected → Retrieved →
-SavedToOneDrive`). If a run fails after `Retrieved` and before
-`SavedToOneDrive`, the next run treats that record as due again and resumes the
-source retrieval/save path.
+(steps 5, 7), and saves the PDF to OneDrive (step 8), persisting after each step
+(`Expected → Retrieved → SavedToOneDrive`). If a run fails after `Retrieved` and
+before `SavedToOneDrive`, the next run treats that record as due again and
+resumes the source retrieval/save path. `DueInvoiceProcessor` does not create
+the next expected record itself (step 10) — `ExpectedRecordGenerator` does,
+run immediately before `DueInvoiceProcessor` in both Functions entry points
+(`GenerateExpectedRecordsTimer`/`GenerateExpectedRecordsHttp`). A record
+reaching a success state this run is picked up on the *next* invocation of that
+generator, not this one, since generation is idempotent per period - a delay of
+at most one processing cycle, never a missed or duplicated record.
 
 OneDrive reconciliation (steps 3–4) is implemented: for each due record the
 processor first asks the OneDrive integration to search the configured
@@ -66,8 +73,9 @@ date/amount/currency tolerances as source matching (the shared
 `InvoiceSearchCriteria.Matches`). Names that do not follow the convention are
 skipped. On a match the record is set to `ReconciledFromOneDrive` — carrying the
 match reason and reconciliation timestamp — the source call and upload are
-skipped, and the next expected record is created (reconciliation is a success
-state, `Expected → ReconciledFromOneDrive`). A search that fails technically is
+skipped (reconciliation is a success state, `Expected → ReconciledFromOneDrive`,
+so `ExpectedRecordGenerator` creates the next expected record on its next run).
+A search that fails technically is
 treated like a retrieval failure (`RetrievalError`, always retryable). Every
 Graph call honours the `Retry-After` header on throttling (HTTP 429/503)
 responses and retries a bounded number of times.

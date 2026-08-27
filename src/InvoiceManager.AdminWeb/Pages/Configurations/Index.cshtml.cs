@@ -10,7 +10,8 @@ namespace InvoiceManager.AdminWeb.Pages.Configurations;
 public sealed class IndexModel(
     InvoiceConfigurationService service,
     IMicrosoftAuthorizationStore authorizationStore,
-    IMicrosoftResourceDiscovery discovery) : PageModel
+    IMicrosoftResourceDiscovery discovery,
+    IInvoiceRecordResyncTrigger resyncTrigger) : PageModel
 {
     public IReadOnlyList<StoredInvoiceConfiguration> Configurations { get; private set; } = [];
     public bool HasWorkflowAuthorization { get; private set; }
@@ -51,6 +52,26 @@ public sealed class IndexModel(
             : activate
                 ? "Configuration activated. Processing will occur on the next scheduled or manual workflow run."
                 : "Configuration deactivated. Outstanding records are preserved and will be skipped while it is inactive.";
+        return RedirectToPage();
+    }
+
+    public async Task<IActionResult> OnPostResyncStuckRecordAsync(string id, IntegrationType integrationType)
+    {
+        var result = await resyncTrigger.TriggerAsync(new(id), integrationType, HttpContext.RequestAborted);
+        TempData["StatusMessage"] = result switch
+        {
+            InvoiceRecordResyncTriggered { Outcome: "Succeeded" } =>
+                "The most recent record was refreshed from the current configuration and will retry on the next run.",
+            InvoiceRecordResyncTriggered { Outcome: "NoRecordExists" } =>
+                "This configuration has no record yet, so there is nothing to resync.",
+            InvoiceRecordResyncTriggered { Outcome: "NotEligible" } =>
+                "The most recent record has already progressed past matching, so it was not resynced.",
+            InvoiceRecordResyncTriggered { Outcome: "ConfigurationNotFound" } => "Configuration not found.",
+            InvoiceRecordResyncTriggered triggered => $"Unrecognised resync outcome: {triggered.Outcome}.",
+            InvoiceRecordResyncNotConfigured =>
+                "The Functions app URL is not configured, so the resync could not be triggered.",
+            InvoiceRecordResyncFailed failed => $"The resync could not be triggered. {failed.Message}",
+        };
         return RedirectToPage();
     }
 

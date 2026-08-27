@@ -42,7 +42,7 @@ stateDiagram-v2
     Retrieved --> save_fork : PDF uploaded to OneDrive
     save_fork --> SavedToOneDrive : no FreeAgent matching configured
     save_fork --> FreeAgentMatchExpected : FreeAgent matching configured (SavedToOneDrive is never written)
-    SavedToOneDrive --> [*] : terminal (next expected record already created)
+    SavedToOneDrive --> [*] : terminal (a success state; ExpectedRecordGenerator creates the next expected record on its next run)
 
     %% --- OneDrive reconciliation (checked before the source, for each due record) ---
     state reconcile_fork <<choice>>
@@ -50,7 +50,7 @@ stateDiagram-v2
     RetrievalError --> reconcile_fork : existing OneDrive file matches (retry)
     reconcile_fork --> ReconciledFromOneDrive : no FreeAgent matching configured
     reconcile_fork --> FreeAgentMatchExpected : FreeAgent matching configured (ReconciledFromOneDrive is never written)
-    ReconciledFromOneDrive --> [*] : terminal (next expected record already created)
+    ReconciledFromOneDrive --> [*] : terminal (a success state; ExpectedRecordGenerator creates the next expected record on its next run)
     Expected --> RetrievalError : technical failure during reconciliation search
     RetrievalError --> RetrievalError : reconciliation search fails again
 

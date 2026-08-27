@@ -88,7 +88,6 @@ public sealed class GenerateExpectedRecordsFunctionTests
             [new FakeInvoiceSourceIntegration(sourceResult)],
             new FakeOneDriveIntegration(),
             new InvoiceFilename(new InvoiceFilenameSettings { Culture = CultureInfo.GetCultureInfo("en-GB") }),
-            generator,
             new FakeFreeAgentBillMatcher(),
             new FakeFreeAgentBillReconciler(),
             new FakeFreeAgentAttachmentUploader(),

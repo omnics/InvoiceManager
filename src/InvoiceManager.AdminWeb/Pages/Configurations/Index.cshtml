@@ -90,6 +90,13 @@
                             @(configuration.IsActive ? "Deactivate" : "Activate")
                         </button>
                     </form>
+                    <form method="post">
+                        <input type="hidden" name="id" value="@configuration.Id.Value" /><input type="hidden" name="integrationType" value="@configuration.IntegrationType" />
+                        <button asp-page-handler="ResyncStuckRecord" class="secondary-action"
+                            title="Refreshes this configuration's most recent record from the current search criteria and retries it. Use after editing the configuration to fix a record stuck as Expected, RetrievalError, or NotFound.">
+                            Resync stuck record
+                        </button>
+                    </form>
                 }
             </div>
         </section>

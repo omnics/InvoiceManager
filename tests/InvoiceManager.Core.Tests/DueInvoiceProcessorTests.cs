@@ -113,8 +113,11 @@ public sealed class DueInvoiceProcessorTests
     }
 
     [Fact]
-    public async Task ProcessDueAsync_CreatesNextExpectedRecord_OnSuccess()
+    public async Task ProcessDueAsync_DoesNotCreateNextExpectedRecord_OnSuccess()
     {
+        // Creating the next expected record is ExpectedRecordGenerator's job, run
+        // separately before this processor in both Functions entry points - not
+        // something DueInvoiceProcessor does itself. See the class remarks.
         var config = Configurations.Build(startDate: new DateOnly(2025, 7, 10));
         var dueRecord = Records.Build(config, expectedDate: new DateOnly(2025, 7, 10));
         var records = new InMemoryInvoiceRecordRepository(dueRecord);
@@ -124,9 +127,8 @@ public sealed class DueInvoiceProcessorTests
 
         await processor.ProcessDueAsync();
 
-        // Next expected date = actual invoice date + monthly frequency.
-        var next = records.All.Single(r => r.State is Expected);
-        Assert.Equal(new DateOnly(2025, 8, 12), next.ExpectedDate);
+        var stored = Assert.Single(records.All);
+        Assert.True(stored.State is SavedToOneDrive, $"Expected SavedToOneDrive but was {stored.State}.");
     }
 
     [Fact]
@@ -152,12 +154,9 @@ public sealed class DueInvoiceProcessorTests
         var success = Assert.Single(results);
         Assert.True(success is ProcessingSucceeded succeeded && succeeded.RecordId == retrievedRecord.Id);
 
-        var saved = records.All.Single(r => r.Id == retrievedRecord.Id);
+        var saved = Assert.Single(records.All);
         Assert.True(saved.State is SavedToOneDrive, $"Expected SavedToOneDrive but was {saved.State}.");
         Assert.Single(oneDrive.Uploads);
-
-        var next = records.All.Single(r => r.State is Expected);
-        Assert.Equal(new DateOnly(2025, 8, 12), next.ExpectedDate);
     }
 
     [Fact]
@@ -321,7 +320,6 @@ public sealed class DueInvoiceProcessorTests
             [source],
             new FakeOneDriveIntegration(),
             BuildFilename(),
-            BuildGenerator(records, savedConfig, notFoundConfig),
             new FakeFreeAgentBillMatcher(),
             new FakeFreeAgentBillReconciler(),
             new FakeFreeAgentAttachmentUploader(),
@@ -357,7 +355,6 @@ public sealed class DueInvoiceProcessorTests
             [source],
             new FakeOneDriveIntegration(),
             BuildFilename(),
-            BuildGenerator(records, failing, healthy),
             new FakeFreeAgentBillMatcher(),
             new FakeFreeAgentBillReconciler(),
             new FakeFreeAgentAttachmentUploader(),
@@ -416,10 +413,6 @@ public sealed class DueInvoiceProcessorTests
         Assert.Equal(config.InvoiceDescription, searched.Criteria.InvoiceDescription);
         Assert.Empty(source.Requests);
         Assert.Empty(oneDrive.Uploads);
-
-        // Reconciliation is a success state, so the next expected record is created.
-        var next = records.All.Single(r => r.State is Expected);
-        Assert.Equal(new DateOnly(2025, 8, 12), next.ExpectedDate);
     }
 
     [Fact]
@@ -484,7 +477,6 @@ public sealed class DueInvoiceProcessorTests
             [source],
             oneDrive,
             BuildFilename(),
-            BuildGenerator(records, config),
             matcher,
             new FakeFreeAgentBillReconciler(),
             uploader,
@@ -521,7 +513,6 @@ public sealed class DueInvoiceProcessorTests
             [source],
             oneDrive,
             BuildFilename(),
-            BuildGenerator(records, config),
             matcher,
             new FakeFreeAgentBillReconciler(),
             new FakeFreeAgentAttachmentUploader(),
@@ -570,7 +561,6 @@ public sealed class DueInvoiceProcessorTests
             [source],
             oneDrive,
             BuildFilename(),
-            BuildGenerator(records, config),
             matcher,
             new FakeFreeAgentBillReconciler(),
             new FakeFreeAgentAttachmentUploader(),
@@ -589,10 +579,6 @@ public sealed class DueInvoiceProcessorTests
         // Reconciliation never has PDF bytes in hand, so entering the FreeAgent stage
         // re-downloads the matched file.
         Assert.Equal(oneDriveDetails, Assert.Single(oneDrive.Downloads));
-
-        // The next expected record is still created even though FreeAgent matching failed.
-        var next = records.All.Single(r => r.State is Expected);
-        Assert.Equal(new DateOnly(2025, 8, 12), next.ExpectedDate);
     }
 
     [Fact]
@@ -630,7 +616,6 @@ public sealed class DueInvoiceProcessorTests
             [source],
             oneDrive,
             BuildFilename(),
-            BuildGenerator(records, config),
             matcher,
             new FakeFreeAgentBillReconciler(),
             uploader,
@@ -678,7 +663,6 @@ public sealed class DueInvoiceProcessorTests
             [source],
             oneDrive,
             BuildFilename(),
-            BuildGenerator(records, config),
             matcher,
             new FakeFreeAgentBillReconciler(),
             new FakeFreeAgentAttachmentUploader(),
@@ -725,7 +709,6 @@ public sealed class DueInvoiceProcessorTests
             [source],
             oneDrive,
             BuildFilename(),
-            BuildGenerator(records, config),
             new FakeFreeAgentBillMatcher(),
             new FakeFreeAgentBillReconciler(),
             new FakeFreeAgentAttachmentUploader(),
@@ -787,7 +770,6 @@ public sealed class DueInvoiceProcessorTests
             [source],
             oneDrive,
             BuildFilename(),
-            BuildGenerator(records, config),
             matcher,
             reconciler,
             new FakeFreeAgentAttachmentUploader(),
@@ -853,7 +835,6 @@ public sealed class DueInvoiceProcessorTests
             [source],
             oneDrive,
             BuildFilename(),
-            BuildGenerator(records, config),
             matcher,
             reconciler,
             new FakeFreeAgentAttachmentUploader(),
@@ -927,7 +908,6 @@ public sealed class DueInvoiceProcessorTests
             [source],
             oneDrive,
             BuildFilename(),
-            BuildGenerator(records, config),
             matcher,
             new FakeFreeAgentBillReconciler(),
             uploader,
@@ -994,7 +974,6 @@ public sealed class DueInvoiceProcessorTests
             [source],
             oneDrive,
             BuildFilename(),
-            BuildGenerator(records, config),
             matcher,
             new FakeFreeAgentBillReconciler(),
             uploader,
@@ -1048,7 +1027,6 @@ public sealed class DueInvoiceProcessorTests
             [source],
             oneDrive,
             BuildFilename(),
-            BuildGenerator(records, config),
             matcher,
             new FakeFreeAgentBillReconciler(),
             uploader,
@@ -1117,7 +1095,6 @@ public sealed class DueInvoiceProcessorTests
             [source],
             oneDrive,
             BuildFilename(),
-            BuildGenerator(records, config),
             matcher,
             new FakeFreeAgentBillReconciler(),
             uploader,
@@ -1165,7 +1142,6 @@ public sealed class DueInvoiceProcessorTests
             [source],
             oneDrive,
             BuildFilename(),
-            BuildGenerator(records, config),
             matcher,
             new FakeFreeAgentBillReconciler(),
             uploader,
@@ -1226,18 +1202,12 @@ public sealed class DueInvoiceProcessorTests
             [source],
             oneDrive,
             BuildFilename(),
-            BuildGenerator(records, configurations),
             new FakeFreeAgentBillMatcher(),
             new FakeFreeAgentBillReconciler(),
             new FakeFreeAgentAttachmentUploader(),
             new InMemoryFreeAgentInterventionRepository(),
             new FixedTimeProvider(Today),
             NullLogger<DueInvoiceProcessor>.Instance);
-
-    private static ExpectedRecordGenerator BuildGenerator(
-        IInvoiceRecordRepository records,
-        params InvoiceConfiguration[] configurations) =>
-        new(records, new FakeConfigurationRepository(configurations), NullLogger<ExpectedRecordGenerator>.Instance);
 
     private static InvoiceFilename BuildFilename() =>
         new(new InvoiceFilenameSettings { Culture = CultureInfo.GetCultureInfo("en-GB") });
