@@ -28,11 +28,16 @@ call).
 
 When asked to create a pull request:
 
-1. Commit and push the current changes, then open the PR (`gh pr create`).
-2. Ask the `codex` CLI to review the PR and post its findings as inline PR
+1. If the change touches any `InvoiceManager.AdminWeb` `.cshtml`/`.cshtml.cs`
+   file, complete the browser verification in
+   [AGENTS.md's UI Changes section](AGENTS.md#ui-changes-invoicemanageradminweb)
+   first — do not open the PR with this only noted as an unchecked test-plan
+   item.
+2. Commit and push the current changes, then open the PR (`gh pr create`).
+3. Ask the `codex` CLI to review the PR and post its findings as inline PR
    review comments (check `codex --help` for the current review/comment
    invocation if unfamiliar with it).
-3. Once codex's comments are posted, critically review each one yourself —
+4. Once codex's comments are posted, critically review each one yourself —
    do not apply a change just because codex suggested it.
    - For a comment you agree with, make the corresponding code change in its
      own separate commit, unless that doesn't make sense in context (e.g.
@@ -40,8 +45,8 @@ When asked to create a pull request:
      together).
    - For a comment you disagree with, reply to it explaining why and close
      it, rather than leaving it unaddressed and unexplained.
-4. Push any resulting changes, and resolve/close the comments that are now
+5. Push any resulting changes, and resolve/close the comments that are now
    addressed by that push.
-5. Ask codex to review again.
-6. Repeat steps 3-5 until a codex review pass completes with no further
+6. Ask codex to review again.
+7. Repeat steps 4-6 until a codex review pass completes with no further
    comments posted.

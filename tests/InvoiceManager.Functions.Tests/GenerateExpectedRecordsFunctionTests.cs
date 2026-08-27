@@ -74,6 +74,33 @@ public sealed class GenerateExpectedRecordsFunctionTests
         Assert.True(processed.State is SavedToOneDrive, $"Expected SavedToOneDrive but was {processed.State}.");
     }
 
+    // Locks in the contract DueInvoiceProcessor's remarks describe: it no longer creates the
+    // next expected record itself, so a successful match this run produces no next record
+    // until GenerateForAllActiveAsync runs again on a *later* invocation of the same function -
+    // covering the orchestration between the two components, not just each in isolation.
+    [Fact]
+    public async Task TimerFunction_CreatesNextExpectedRecord_OnlyOnASubsequentInvocation()
+    {
+        var config = Configurations.Build(id: new InvoiceConfigurationId("config-due"), startDate: new DateOnly(2025, 7, 1));
+        var dueRecord = Records.Build(config, expectedDate: new DateOnly(2025, 7, 1));
+        var recordRepo = new InMemoryInvoiceRecordRepository(dueRecord);
+        var match = new InvoiceMatch(
+            [1, 2, 3],
+            Actuals.Build(new DateOnly(2025, 7, 2), new Money(10.00m, "GBP"), new SourceInvoiceId("G1")));
+        var function = BuildTimerFunction(recordRepo, new DateOnly(2025, 7, 15), match, config);
+
+        await function.RunAsync(new TimerInfo(), CancellationToken.None);
+
+        Assert.Single(recordRepo.All);
+        Assert.True(recordRepo.All.Single().State is SavedToOneDrive);
+
+        await function.RunAsync(new TimerInfo(), CancellationToken.None);
+
+        Assert.Equal(2, recordRepo.All.Count);
+        var next = recordRepo.All.Single(r => r.State is Expected);
+        Assert.Equal(new DateOnly(2025, 8, 2), next.ExpectedDate);
+    }
+
     private static GenerateExpectedRecordsTimer BuildTimerFunction(
         IInvoiceRecordRepository recordRepo,
         DateOnly today,
@@ -88,7 +115,6 @@ public sealed class GenerateExpectedRecordsFunctionTests
             [new FakeInvoiceSourceIntegration(sourceResult)],
             new FakeOneDriveIntegration(),
             new InvoiceFilename(new InvoiceFilenameSettings { Culture = CultureInfo.GetCultureInfo("en-GB") }),
-            generator,
             new FakeFreeAgentBillMatcher(),
             new FakeFreeAgentBillReconciler(),
             new FakeFreeAgentAttachmentUploader(),

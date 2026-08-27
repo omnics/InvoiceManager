@@ -75,6 +75,7 @@ var host = new HostBuilder()
                 sp.GetRequiredService<ILogger<CosmosInvoiceRecordRepository>>()));
 
         services.AddSingleton<ExpectedRecordGenerator>();
+        services.AddSingleton<InvoiceRecordResync>();
 
         // Microsoft delegated authentication (reuses the MSAL cache the admin website
         // persisted to Key Vault) for both the billing API and OneDrive uploads.

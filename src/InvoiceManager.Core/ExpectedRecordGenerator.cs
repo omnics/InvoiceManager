@@ -5,9 +5,11 @@ using Microsoft.Extensions.Logging;
 namespace InvoiceManager.Core;
 
 /// <summary>
-/// Generates the next expected invoice record for a configuration.
-/// Reusable by both the timer trigger on startup and the post-processing step
-/// after a successful invoice save.
+/// Generates the next expected invoice record for a configuration. Run
+/// immediately before <see cref="DueInvoiceProcessor"/> in both Functions entry
+/// points (<c>GenerateExpectedRecordsTimer</c>/<c>GenerateExpectedRecordsHttp</c>)
+/// - a record that reaches a success state during a processing run is picked up
+/// here on the *next* invocation, not the one that produced it.
 /// </summary>
 public sealed class ExpectedRecordGenerator(
     IInvoiceRecordRepository repository,

@@ -112,6 +112,7 @@ builder.Services.AddSingleton<TokenCredential>(new DefaultAzureCredential());
 
 builder.Services.AddHttpClient<FunctionsHealthCheck>();
 builder.Services.AddHttpClient<IExpectedRecordGenerationTrigger, FunctionsExpectedRecordGenerationTrigger>();
+builder.Services.AddHttpClient<IInvoiceRecordResyncTrigger, FunctionsInvoiceRecordResyncTrigger>();
 builder.Services.AddSingleton(_ => CosmosClientFactory.Create(builder.Configuration));
 builder.Services.AddSingleton<IInvoiceConfigurationRepository>(sp =>
     new CosmosInvoiceConfigurationRepository(

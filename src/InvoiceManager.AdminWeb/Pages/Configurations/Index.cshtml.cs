@@ -10,7 +10,8 @@ namespace InvoiceManager.AdminWeb.Pages.Configurations;
 public sealed class IndexModel(
     InvoiceConfigurationService service,
     IMicrosoftAuthorizationStore authorizationStore,
-    IMicrosoftResourceDiscovery discovery) : PageModel
+    IMicrosoftResourceDiscovery discovery,
+    IInvoiceRecordResyncTrigger resyncTrigger) : PageModel
 {
     public IReadOnlyList<StoredInvoiceConfiguration> Configurations { get; private set; } = [];
     public bool HasWorkflowAuthorization { get; private set; }
@@ -51,6 +52,26 @@ public sealed class IndexModel(
             : activate
                 ? "Configuration activated. Processing will occur on the next scheduled or manual workflow run."
                 : "Configuration deactivated. Outstanding records are preserved and will be skipped while it is inactive.";
+        return RedirectToPage();
+    }
+
+    public async Task<IActionResult> OnPostResyncStuckRecordAsync(string id, IntegrationType integrationType)
+    {
+        var result = await resyncTrigger.TriggerAsync(new(id), integrationType, HttpContext.RequestAborted);
+        TempData["StatusMessage"] = result switch
+        {
+            InvoiceRecordResyncTriggerSucceeded =>
+                "The most recent record was refreshed from the current configuration and reset to Expected; it will " +
+                "be retried the next time this configuration is processed (skipped while it is inactive).",
+            InvoiceRecordResyncTriggerNoRecordExists =>
+                "This configuration has no record yet, so there is nothing to resync.",
+            InvoiceRecordResyncTriggerNotEligible =>
+                "The most recent record has already progressed past matching, so it was not resynced.",
+            InvoiceRecordResyncTriggerConfigurationNotFound => "Configuration not found.",
+            InvoiceRecordResyncNotConfigured =>
+                "The Functions app URL is not configured, so the resync could not be triggered.",
+            InvoiceRecordResyncFailed failed => $"The resync could not be triggered. {failed.Message}",
+        };
         return RedirectToPage();
     }
 

@@ -8,22 +8,36 @@ namespace InvoiceManager.Core;
 
 /// <summary>
 /// Processes invoice records that are due for retrieval: for each due record it
-/// asks the matching source integration for the invoice, saves it to OneDrive,
-/// and creates the next expected record. Records that are not yet available stay
-/// <see cref="Expected"/> (retried on later runs) until their tolerance window
-/// elapses, after which they move to the terminal <see cref="NotFound"/>.
-/// A technical failure moves the record to <see cref="RetrievalError"/> (always
-/// retried) and is isolated so the other records still run. State is persisted
-/// after each step so a later run can continue without repeating completed work.
-/// Structured telemetry is emitted per record and as a run summary.
+/// asks the matching source integration for the invoice and saves it to OneDrive.
+/// Only records whose configuration is active are considered (see
+/// <see cref="ProcessDueAsync"/>). Records that are not yet available stay
+/// <see cref="Expected"/> (retried on a later run of the same active
+/// configuration) until their tolerance window elapses, after which they move to
+/// the terminal <see cref="NotFound"/>. A technical failure moves the record to
+/// <see cref="RetrievalError"/> (retried the same way) and is isolated so the
+/// other records still run. State is persisted after each step so a later run
+/// can continue without repeating completed work. Structured telemetry is
+/// emitted per record and as a run summary.
 /// </summary>
+/// <remarks>
+/// Does not create the next expected record itself - <see cref="ExpectedRecordGenerator"/>
+/// does that, and is always run immediately before this processor in both
+/// Functions entry points (<c>GenerateExpectedRecordsTimer</c>/<c>GenerateExpectedRecordsHttp</c>).
+/// A record reaching a success state this run (see <see cref="NextExpectedInvoiceDate"/>)
+/// is picked up by that generator on its <em>next</em> invocation, not this one -
+/// generation is idempotent per period, so there is no risk of missing or
+/// duplicating a record, only a delay of up to one processing cycle. This also
+/// means an <see cref="InvoiceConfiguration"/> update made during this run (for
+/// example an amount-tolerance auto-correction) only needs to be durably
+/// persisted before that next invocation reloads configurations - no need to
+/// thread an updated in-memory configuration through the rest of this run.
+/// </remarks>
 public sealed class DueInvoiceProcessor(
     IInvoiceRecordRepository recordRepository,
     IInvoiceConfigurationRepository configurationRepository,
     IEnumerable<IInvoiceSourceIntegration> sourceIntegrations,
     IOneDriveIntegration oneDriveIntegration,
     InvoiceFilename invoiceFilename,
-    ExpectedRecordGenerator expectedRecordGenerator,
     IFreeAgentBillMatcher freeAgentBillMatcher,
     IFreeAgentBillReconciler freeAgentBillReconciler,
     IFreeAgentAttachmentUploader freeAgentAttachmentUploader,
@@ -61,7 +75,7 @@ public sealed class DueInvoiceProcessor(
         {
             // Skip records whose configuration is no longer active or present: nothing
             // further can be done for them this run, so record why and move on.
-            if (!configurationsById.TryGetValue(record.ConfigurationId, out var configuration))
+            if (!configurationsById.TryGetValue(record.ConfigurationId, out _))
             {
                 skippedCount++;
                 runActivity?.AddEvent(new ActivityEvent("record_skipped_inactive_configuration",
@@ -95,15 +109,15 @@ public sealed class DueInvoiceProcessor(
 
             try
             {
-                var result = await ProcessAsync(record, configuration, snapshot, asOf, recordActivity, cancellationToken);
+                var result = await ProcessAsync(record, snapshot, asOf, recordActivity, cancellationToken);
                 recordActivity?.SetTag("invoice.outcome", OutcomeName(result));
                 results.Add(result);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                // A failure outside retrieval (for example a save or next-record step) leaves
-                // the record in its last persisted, already-retryable state. Report it without
-                // stopping the other records.
+                // A failure outside retrieval (for example a save step) leaves the record in
+                // its last persisted, already-retryable state. Report it without stopping the
+                // other records.
                 recordActivity?.SetTag("invoice.outcome", "failed");
                 recordActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 recordActivity?.AddException(ex);
@@ -132,7 +146,6 @@ public sealed class DueInvoiceProcessor(
 
     private async Task<DueInvoiceProcessingResult> ProcessAsync(
         InvoiceRecord record,
-        InvoiceConfiguration configuration,
         InvoiceProcessingSnapshot snapshot,
         DateOnly asOf,
         Activity? recordActivity,
@@ -179,7 +192,7 @@ public sealed class DueInvoiceProcessor(
         }
 
         if (search is OneDriveMatch reconciledMatch)
-            return await ReconcileAsync(record, configuration, snapshot, reconciledMatch, recordActivity, cancellationToken);
+            return await ReconcileAsync(record, snapshot, reconciledMatch, recordActivity, cancellationToken);
 
         // No existing file: fall through to the source integration.
         InvoiceSourceResult result;
@@ -232,10 +245,6 @@ public sealed class DueInvoiceProcessor(
             await recordRepository.ReplaceAsync(matchExpected, cancellationToken);
             recordActivity?.AddEvent(new ActivityEvent("state_freeagent_match_expected"));
 
-            // Next-expected-record generation happens here, unconditionally - the recurring
-            // schedule never stalls on a FreeAgent-side conflict below (see docs/workflow-states.md).
-            await expectedRecordGenerator.GenerateAsync(configuration, cancellationToken);
-
             logger.LogInformation(
                 "Saved invoice {FileName} for record {RecordId}; entering the FreeAgent stage.", fileName, record.Id);
 
@@ -243,12 +252,9 @@ public sealed class DueInvoiceProcessor(
                 matchExpected, matching, match.Details, oneDriveDetails, match.PdfContent, fileName, recordActivity, cancellationToken);
         }
 
-        // Saved to OneDrive: persist before creating the next expected record.
         var saved = retrieved with { State = new SavedToOneDrive(match.Details, oneDriveDetails) };
         await recordRepository.ReplaceAsync(saved, cancellationToken);
         recordActivity?.AddEvent(new ActivityEvent("state_saved_to_onedrive"));
-
-        await expectedRecordGenerator.GenerateAsync(configuration, cancellationToken);
 
         logger.LogInformation("Saved invoice {FileName} for record {RecordId}.", fileName, record.Id);
 
@@ -693,12 +699,10 @@ public sealed class DueInvoiceProcessor(
     /// matching is configured, goes straight to <see cref="FreeAgentMatchExpected"/> -
     /// <see cref="ReconciledFromOneDrive"/> is never written - and enters the FreeAgent stage
     /// using the matched file's bytes; otherwise sets <see cref="ReconciledFromOneDrive"/> (with
-    /// the match reason and time). Either way the next expected record is created, without
-    /// calling the source or re-uploading.
+    /// the match reason and time), without calling the source or re-uploading.
     /// </summary>
     private async Task<DueInvoiceProcessingResult> ReconcileAsync(
         InvoiceRecord record,
-        InvoiceConfiguration configuration,
         InvoiceProcessingSnapshot snapshot,
         OneDriveMatch match,
         Activity? recordActivity,
@@ -715,8 +719,6 @@ public sealed class DueInvoiceProcessor(
             logger.LogInformation(
                 "Reconciled record {RecordId} against existing OneDrive file at {Location}; entering the FreeAgent stage.",
                 record.Id, match.OneDriveDetails.OneDriveLocation);
-
-            await expectedRecordGenerator.GenerateAsync(configuration, cancellationToken);
 
             return await ResumeFreeAgentStageAsync(matchExpected, snapshot, recordActivity, cancellationToken);
         }
@@ -735,7 +737,6 @@ public sealed class DueInvoiceProcessor(
             "Reconciled record {RecordId} against existing OneDrive file at {Location}; skipping source retrieval.",
             record.Id, match.OneDriveDetails.OneDriveLocation);
 
-        await expectedRecordGenerator.GenerateAsync(configuration, cancellationToken);
         return new ProcessingReconciled(record.Id);
     }
 

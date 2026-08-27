@@ -50,10 +50,19 @@ public sealed class IndexModelExportTests
         return new IndexModel(
             new InvoiceConfigurationService(repository),
             new FakeMicrosoftAuthorizationStore(hasTokenCache: true),
-            new FakeMicrosoftResourceDiscovery())
+            new FakeMicrosoftResourceDiscovery(),
+            new FakeInvoiceRecordResyncTrigger())
         {
             PageContext = new PageContext { HttpContext = httpContext },
         };
+    }
+
+    private sealed class FakeInvoiceRecordResyncTrigger : IInvoiceRecordResyncTrigger
+    {
+        public Task<InvoiceRecordResyncTriggerResult> TriggerAsync(
+            InvoiceConfigurationId configurationId, IntegrationType integrationType, CancellationToken cancellationToken) =>
+            Task.FromResult<InvoiceRecordResyncTriggerResult>(
+                new InvoiceRecordResyncTriggerSucceeded(new InvoiceRecordId("test-record")));
     }
 
     private sealed class FakeMicrosoftAuthorizationStore(bool hasTokenCache) : IMicrosoftAuthorizationStore

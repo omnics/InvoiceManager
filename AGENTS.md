@@ -123,6 +123,37 @@ Be careful with:
   existing one, and when a shared resource must be used, select the specific
   one the test's assertions actually depend on rather than "the first one."
 
+## UI Changes (`InvoiceManager.AdminWeb`)
+
+A change is not complete just because it builds and the automated suites
+pass — `InvoiceManager.AdminWeb.PlaywrightTests` does not cover most pages,
+and a passing build says nothing about whether a new element actually
+renders correctly or looks right next to its neighbors. Before considering
+any change to a `.cshtml`/`.cshtml.cs` file (a new page, button, form field,
+or layout element) done:
+
+- **Run it in a browser.** Start Aspire locally (or use an already-running
+  instance) and actually exercise the changed page/action as a user would —
+  click the button, submit the form, trigger the error path if one exists.
+  Confirm it does what it's supposed to, not just that it renders without a
+  server error.
+- **Check visual consistency**, not just function: spacing/padding, colors,
+  fonts, and button/element styling should match the surrounding page. Reuse
+  an existing CSS class (e.g. `secondary-action`, `primary-action`,
+  `notice`) rather than introduce new ad hoc styling — a new element built by
+  copying a neighboring element's markup should visually blend in, and that
+  assumption needs to be confirmed by looking at it, not just inferred from
+  having copied the right class names.
+- **State plainly in the PR description whether this happened.** Do not
+  leave an unchecked "not yet verified in a browser" box in a test plan and
+  then take no further action on it — either do the check before the PR is
+  considered ready, or say explicitly (not just in a checklist) that it
+  still needs to happen and who/what will do it.
+- If Playwright coverage exists for the touched page, run that suite locally
+  per [Testing Expectations](#testing-expectations) above. If it doesn't,
+  the manual browser check above is the *only* verification this change
+  gets — treat it as mandatory, not optional, for exactly that reason.
+
 ## Reviewing a Pull Request
 
 When performing a code review on a PR in this repository (any reviewing
