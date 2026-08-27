@@ -210,9 +210,12 @@ public sealed class GraphEmailInvoiceSource(
 
         if (rejectedCandidates.Count == 0)
         {
+            // No candidate ever had a readable PDF attachment to check against criteria at
+            // all (see the "matched_email_has_no_pdf" path) - an amount clause here would
+            // wrongly imply an attachment was found and rejected on amount.
             return $"{candidateCount} email(s) from {email.SenderEmailAddress} matched the date window " +
                 $"({windowStart:yyyy-MM-dd} to {windowEnd:yyyy-MM-dd}) and {bodyPatternDescription}, but none had a " +
-                $"readable PDF attachment matching the expected amount {amountDescription}.";
+                $"PDF attachment to check.";
         }
 
         // Different rejected candidates can fail for different reasons (one on date, another

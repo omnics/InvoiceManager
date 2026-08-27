@@ -80,7 +80,15 @@ public sealed class GraphEmailInvoiceSourceTests
 
         var result = await source.FindInvoiceAsync(Criteria());
 
-        Assert.True(result is NoInvoiceMatch, $"Expected NoInvoiceMatch but got {result}.");
+        if (result is not NoInvoiceMatch noMatch)
+        {
+            Assert.Fail($"Expected NoInvoiceMatch but got {result}.");
+            return;
+        }
+
+        // No amount was ever configured or even checked here (no PDF was found to check) -
+        // the diagnostic must not claim otherwise (e.g. "expected amount any amount").
+        Assert.DoesNotContain("amount", noMatch.Diagnostic);
     }
 
     [Fact]
