@@ -10,30 +10,32 @@ public sealed class ResyncInvoiceRecordHttpTests
     {
         var result = ResyncInvoiceRecordHttp.ParseRequest("config-1", "MicrosoftBilling");
 
-        Assert.Equal(new ResyncInvoiceRecordHttp.ParsedRequest("config-1", IntegrationType.MicrosoftBilling), result);
+        Assert.Equal(
+            new ResyncInvoiceRecordHttp.ParsedRequest(new InvoiceConfigurationId("config-1"), IntegrationType.MicrosoftBilling),
+            result);
     }
 
     [Fact]
-    public void ParseRequest_ReturnsNull_WhenConfigurationIdIsMissing()
+    public void ParseRequest_ReturnsNone_WhenConfigurationIdIsMissing()
     {
-        Assert.Null(ResyncInvoiceRecordHttp.ParseRequest(null, "MicrosoftBilling"));
-        Assert.Null(ResyncInvoiceRecordHttp.ParseRequest("", "MicrosoftBilling"));
-        Assert.Null(ResyncInvoiceRecordHttp.ParseRequest("   ", "MicrosoftBilling"));
+        Assert.True(ResyncInvoiceRecordHttp.ParseRequest(null, "MicrosoftBilling") is None);
+        Assert.True(ResyncInvoiceRecordHttp.ParseRequest("", "MicrosoftBilling") is None);
+        Assert.True(ResyncInvoiceRecordHttp.ParseRequest("   ", "MicrosoftBilling") is None);
     }
 
     [Fact]
-    public void ParseRequest_ReturnsNull_WhenIntegrationTypeIsMissingOrUnrecognisedName()
+    public void ParseRequest_ReturnsNone_WhenIntegrationTypeIsMissingOrUnrecognisedName()
     {
-        Assert.Null(ResyncInvoiceRecordHttp.ParseRequest("config-1", null));
-        Assert.Null(ResyncInvoiceRecordHttp.ParseRequest("config-1", "NotARealIntegrationType"));
+        Assert.True(ResyncInvoiceRecordHttp.ParseRequest("config-1", null) is None);
+        Assert.True(ResyncInvoiceRecordHttp.ParseRequest("config-1", "NotARealIntegrationType") is None);
     }
 
     [Fact]
-    public void ParseRequest_ReturnsNull_WhenIntegrationTypeIsAnUndefinedNumericValue()
+    public void ParseRequest_ReturnsNone_WhenIntegrationTypeIsAnUndefinedNumericValue()
     {
         // Enum.TryParse alone accepts any integer-parseable string for a non-flags enum,
         // defined or not - this is exactly the gap that would let an out-of-range numeric
         // value reach the repository as an undefined IntegrationType.
-        Assert.Null(ResyncInvoiceRecordHttp.ParseRequest("config-1", "999"));
+        Assert.True(ResyncInvoiceRecordHttp.ParseRequest("config-1", "999") is None);
     }
 }

@@ -41,8 +41,7 @@ public sealed class ResyncInvoiceRecordHttp(
         logger.LogInformation(
             "Invoice record resync triggered by HTTP request for configuration {ConfigurationId}.", configurationId);
 
-        var result = await resync.ResyncMostRecentAsync(
-            new InvoiceConfigurationId(configurationId), integrationType, cancellationToken);
+        var result = await resync.ResyncMostRecentAsync(configurationId, integrationType, cancellationToken);
 
         var body = result switch
         {
@@ -67,21 +66,21 @@ public sealed class ResyncInvoiceRecordHttp(
     /// value (for example "999") as well as a missing/unrecognised name - <see cref="Enum.TryParse{TEnum}(string?,out TEnum)"/>
     /// alone accepts any integer-parseable string for a non-flags enum, defined or not.
     /// </summary>
-    public static ParsedRequest? ParseRequest(string? configurationId, string? integrationTypeText)
+    public static Option<ParsedRequest> ParseRequest(string? configurationId, string? integrationTypeText)
     {
         if (string.IsNullOrWhiteSpace(configurationId))
-            return null;
+            return Option.None;
 
         if (!Enum.TryParse<IntegrationType>(integrationTypeText, out var integrationType) ||
             !Enum.IsDefined(integrationType))
         {
-            return null;
+            return Option.None;
         }
 
-        return new ParsedRequest(configurationId, integrationType);
+        return new ParsedRequest(new InvoiceConfigurationId(configurationId), integrationType);
     }
 
-    public sealed record ParsedRequest(string ConfigurationId, IntegrationType IntegrationType);
+    public sealed record ParsedRequest(InvoiceConfigurationId ConfigurationId, IntegrationType IntegrationType);
 
     private sealed record ResyncResultDto(string Outcome, string? RecordId);
 }
