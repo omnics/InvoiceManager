@@ -32,7 +32,8 @@ public union InvoiceRecordResyncResult(ResyncSucceeded, ResyncConfigurationNotFo
 /// subscription price rise, and an <see cref="InvoiceConfiguration"/> edit alone cannot fix
 /// because the record already carries its own frozen copy of the search criteria. Re-derives
 /// that copy from the current configuration and resets the record to <see cref="Expected"/> so
-/// the next run retries it - manual intervention, matching the recovery path
+/// it is retried the next time its configuration is processed (skipped while that
+/// configuration is inactive) - manual intervention, matching the recovery path
 /// docs/domain-model.md already documents for a terminal <see cref="NotFound"/> record.
 /// </summary>
 public sealed class InvoiceRecordResync(
