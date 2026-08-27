@@ -85,9 +85,55 @@ public sealed class MicrosoftBillingInvoiceSourceTests
 
         var result = await source.FindInvoiceAsync(Criteria());
 
-        Assert.True(result is NoInvoiceMatch, $"Expected NoInvoiceMatch but got {result}.");
+        if (result is not NoInvoiceMatch noMatch)
+        {
+            Assert.Fail($"Expected NoInvoiceMatch but got {result}.");
+            return;
+        }
+
         // Only the list call should have been made — no download attempted.
         Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task FindInvoiceAsync_DiagnosticReportsNearestCandidate_WhenAmountChangedOutsideTolerance()
+    {
+        // Reproduces the case a subscription price rise causes: a candidate exists exactly
+        // on the expected date, but its amount no longer satisfies amountTolerance 0.
+        var handler = new StubHttpMessageHandler(Script(PdfBytes, invoiceAmount: 13.61m));
+        var source = BuildSource(handler);
+
+        var result = await source.FindInvoiceAsync(Criteria());
+
+        if (result is not NoInvoiceMatch noMatch)
+        {
+            Assert.Fail($"Expected NoInvoiceMatch but got {result}.");
+            return;
+        }
+
+        Assert.Contains("G152207778", noMatch.Diagnostic);
+        Assert.Contains("2025-07-12", noMatch.Diagnostic);
+        Assert.Contains("13.61", noMatch.Diagnostic);
+        Assert.Contains("11.59", noMatch.Diagnostic);
+    }
+
+    [Fact]
+    public async Task FindInvoiceAsync_DiagnosticReportsEmptyWindow_WhenNoInvoiceIsDatedWithinTolerance()
+    {
+        var handler = new StubHttpMessageHandler(Script(PdfBytes, invoiceDate: "2025-01-01T00:00:00Z"));
+        var source = BuildSource(handler);
+
+        var result = await source.FindInvoiceAsync(Criteria());
+
+        if (result is not NoInvoiceMatch noMatch)
+        {
+            Assert.Fail($"Expected NoInvoiceMatch but got {result}.");
+            return;
+        }
+
+        Assert.Contains("2025-07-05", noMatch.Diagnostic);
+        Assert.Contains("2025-07-15", noMatch.Diagnostic);
+        Assert.Contains("1 invoice(s) considered", noMatch.Diagnostic);
     }
 
     [Fact]
@@ -180,7 +226,8 @@ public sealed class MicrosoftBillingInvoiceSourceTests
         byte[] downloadBytes,
         int pollsBeforeReady = 0,
         decimal invoiceAmount = 11.59m,
-        bool paginateInvoiceList = false)
+        bool paginateInvoiceList = false,
+        string invoiceDate = "2025-07-12T00:00:00Z")
     {
         var polls = 0;
         var invoiceListRequests = 0;
@@ -206,20 +253,20 @@ public sealed class MicrosoftBillingInvoiceSourceTests
                         $$"""{ "value": [], "nextLink": "{{NextPageUrl}}" }""");
                 }
 
-                return Json(HttpStatusCode.OK, InvoiceListJson(invoiceAmount));
+                return Json(HttpStatusCode.OK, InvoiceListJson(invoiceAmount, invoiceDate));
             }
 
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         };
     }
 
-    private static string InvoiceListJson(decimal amount) => $$"""
+    private static string InvoiceListJson(decimal amount, string invoiceDate = "2025-07-12T00:00:00Z") => $$"""
         {
           "value": [
             {
               "name": "G152207778",
               "properties": {
-                "invoiceDate": "2025-07-12T00:00:00Z",
+                "invoiceDate": "{{invoiceDate}}",
                 "totalAmount": { "currency": "GBP", "value": {{amount}} },
                 "documents": [
                   { "name": "invoice.pdf", "kind": "Invoice" },

@@ -7,12 +7,19 @@ namespace InvoiceManager.Core;
 /// have never been attempted and records whose retrieval attempts have so far
 /// found no match while still inside the tolerance window; later runs retry.
 /// </summary>
-public sealed record Expected;
+/// <param name="LastDiagnostic">
+/// Why the most recent attempt found nothing - <see cref="Core.None"/> for a
+/// record that has never been attempted yet. Updated on every no-match attempt,
+/// not just the final one, so an administrator watching before the deadline can
+/// see what the last poll actually found.
+/// </param>
+public sealed record Expected(Option<string> LastDiagnostic);
 
 /// <summary>
 /// The invoice could not be found on or after the configured tolerance deadline.
 /// </summary>
-public sealed record NotFound;
+/// <param name="Diagnostic">Why the deadline-time attempt found nothing.</param>
+public sealed record NotFound(string Diagnostic);
 
 /// <summary>
 /// A retrieval attempt failed with a technical error, so the system could not
@@ -57,7 +64,15 @@ public sealed record SavedToOneDrive(ActualInvoiceDetails ActualDetails, OneDriv
 /// <see cref="Expected"/>/<see cref="NotFound"/>): a retry re-fetches the PDF bytes
 /// from OneDrive via <see cref="OneDriveDetails"/> rather than persisting them.
 /// </summary>
-public sealed record FreeAgentMatchExpected(ActualInvoiceDetails ActualDetails, OneDriveDetails OneDriveDetails);
+/// <param name="LastMatchDiagnostic">
+/// Why the most recent FreeAgent bill search attempt found nothing/was
+/// ambiguous - <see cref="Core.None"/> when this state was just entered fresh
+/// (from retrieval/save or OneDrive reconciliation) and no match has been
+/// attempted yet. Updated on every unsuccessful attempt so an administrator can
+/// see why the record is stuck without re-querying FreeAgent.
+/// </param>
+public sealed record FreeAgentMatchExpected(
+    ActualInvoiceDetails ActualDetails, OneDriveDetails OneDriveDetails, Option<string> LastMatchDiagnostic);
 
 /// <summary>
 /// The retrieved/reconciled invoice has been matched to a FreeAgent bill, but no

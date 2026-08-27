@@ -22,7 +22,7 @@ public sealed class GenerateExpectedRecordsFunctionTests
         var config1 = Configurations.Build(id: new InvoiceConfigurationId("config-1"), startDate: new DateOnly(2025, 7, 1));
         var config2 = Configurations.Build(id: new InvoiceConfigurationId("config-2"), startDate: new DateOnly(2025, 8, 1));
         var recordRepo = new InMemoryInvoiceRecordRepository();
-        var function = BuildTimerFunction(recordRepo, BeforeAnyRecord, new NoInvoiceMatch(), config1, config2);
+        var function = BuildTimerFunction(recordRepo, BeforeAnyRecord, new NoInvoiceMatch("test diagnostic"), config1, config2);
 
         await function.RunAsync(new TimerInfo(), CancellationToken.None);
 
@@ -35,7 +35,7 @@ public sealed class GenerateExpectedRecordsFunctionTests
     public async Task TimerFunction_DoesNotCreateRecords_WhenNoActiveConfigurationsExist()
     {
         var recordRepo = new InMemoryInvoiceRecordRepository();
-        var function = BuildTimerFunction(recordRepo, BeforeAnyRecord, new NoInvoiceMatch());
+        var function = BuildTimerFunction(recordRepo, BeforeAnyRecord, new NoInvoiceMatch("test diagnostic"));
 
         await function.RunAsync(new TimerInfo(), CancellationToken.None);
 
@@ -49,7 +49,7 @@ public sealed class GenerateExpectedRecordsFunctionTests
         var healthy = Configurations.Build(id: new InvoiceConfigurationId("config-healthy"), startDate: new DateOnly(2025, 8, 1));
         var recordRepo = new ThrowingInvoiceRecordRepository(
             failing.Id, new InvalidOperationException("Simulated repository failure."));
-        var function = BuildTimerFunction(recordRepo, BeforeAnyRecord, new NoInvoiceMatch(), failing, healthy);
+        var function = BuildTimerFunction(recordRepo, BeforeAnyRecord, new NoInvoiceMatch("test diagnostic"), failing, healthy);
 
         await function.RunAsync(new TimerInfo(), CancellationToken.None);
 

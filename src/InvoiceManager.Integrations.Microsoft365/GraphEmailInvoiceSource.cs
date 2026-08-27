@@ -8,6 +8,7 @@ using InvoiceManager.Core.Integrations;
 using InvoiceManager.Infrastructure.Http;
 using InvoiceManager.Infrastructure.MicrosoftAuthorization;
 using Microsoft.Extensions.Logging;
+using NodaMoney;
 
 namespace InvoiceManager.Integrations.Microsoft365;
 
@@ -55,6 +56,12 @@ public sealed class GraphEmailInvoiceSource(
         // candidate from being tried.
         var extractionFailures = new List<string>();
 
+        // Every successfully-extracted PDF that didn't satisfy criteria, across every
+        // candidate message - carried into the diagnostic so a rejected invoice's actual
+        // date/amount is visible without re-reading provider logs (mirrors the other
+        // source integrations' "nearest rejected candidate" diagnostic).
+        var rejectedCandidates = new List<RejectedEmailCandidate>();
+
         // Closest to the expected date first, mirroring the closest-match preference
         // used by the other source/OneDrive matchers.
         foreach (var message in candidates.OrderBy(m => criteria.DateDistanceDays(DateOnly.FromDateTime(m.ReceivedDateTime.UtcDateTime))))
@@ -74,6 +81,12 @@ public sealed class GraphEmailInvoiceSource(
             if (outcome is EmailInvoiceExtractionFailed extractionFailed)
             {
                 extractionFailures.Add($"message {message.Id}: {extractionFailed.Reason}");
+                continue;
+            }
+
+            if (outcome is EmailInvoiceCriteriaMismatch mismatch)
+            {
+                rejectedCandidates.AddRange(mismatch.RejectedCandidates);
                 continue;
             }
 
@@ -101,11 +114,12 @@ public sealed class GraphEmailInvoiceSource(
                 $"an invoice: {string.Join("; ", extractionFailures)}.");
         }
 
+        var diagnostic = BuildNoMatchDiagnostic(email, criteria, candidates.Count, rejectedCandidates);
         activity?.AddEvent(new ActivityEvent("no_match"));
         logger.LogInformation(
-            "No email matched criteria for sender {Sender} around {ExpectedDate} ({CandidateCount} candidate(s) considered).",
-            email.SenderEmailAddress, criteria.ExpectedDate, candidates.Count);
-        return new NoInvoiceMatch();
+            "No email matched criteria for sender {Sender} around {ExpectedDate}: {Diagnostic}",
+            email.SenderEmailAddress, criteria.ExpectedDate, diagnostic);
+        return new NoInvoiceMatch(diagnostic);
     }
 
     /// <summary>
@@ -124,6 +138,7 @@ public sealed class GraphEmailInvoiceSource(
         CancellationToken cancellationToken)
     {
         var readFailures = new List<string>();
+        var rejectedCandidates = new List<RejectedEmailCandidate>();
 
         foreach (var attachment in pdfAttachments)
         {
@@ -133,7 +148,14 @@ public sealed class GraphEmailInvoiceSource(
             if (result is PdfExtractionSucceeded succeeded)
             {
                 if (!criteria.Matches(succeeded.InvoiceDate, succeeded.Total))
+                {
+                    // criteria.Matches rejects on date, amount, or both - record which, so the
+                    // diagnostic never blames "amount" for a candidate whose date was actually
+                    // the reason (or claims an amount mismatch when no amount is even configured).
+                    var withinDateTolerance = criteria.DateDistanceDays(succeeded.InvoiceDate) <= criteria.DateToleranceDays;
+                    rejectedCandidates.Add(new RejectedEmailCandidate(succeeded.InvoiceDate, succeeded.Total, withinDateTolerance));
                     continue;
+                }
 
                 var sourceInvoiceId = Path.GetFileNameWithoutExtension(attachment.Name);
                 if (!IsValidSourceInvoiceId(sourceInvoiceId))
@@ -155,8 +177,70 @@ public sealed class GraphEmailInvoiceSource(
         return readFailures.Count > 0
             ? new EmailInvoiceExtractionFailed(
                 $"{readFailures.Count} of {pdfAttachments.Count} PDF attachment(s) could not be read: {string.Join("; ", readFailures)}")
-            : new EmailInvoiceCriteriaMismatch();
+            : new EmailInvoiceCriteriaMismatch(rejectedCandidates);
     }
+
+    /// <summary>
+    /// Explains why no candidate email's PDF attachment satisfied the criteria: the
+    /// sender, date window, optional body pattern, expected amount/tolerance (if
+    /// configured), how many candidate emails were considered in the window, and - if
+    /// any PDF extracted successfully but was rejected on date/amount - the nearest
+    /// rejected candidate's actual values.
+    /// </summary>
+    private static string BuildNoMatchDiagnostic(
+        GraphEmailIntegrationConfiguration email,
+        InvoiceSearchCriteria criteria,
+        int candidateCount,
+        IReadOnlyList<RejectedEmailCandidate> rejectedCandidates)
+    {
+        var windowStart = criteria.ExpectedDate.AddDays(-criteria.DateToleranceDays);
+        var windowEnd = criteria.ExpectedDate.AddDays(criteria.DateToleranceDays);
+        var amountDescription = criteria.AmountMatchingCriteria is AmountMatchingCriteria amc
+            ? $"{amc.Amount.Amount} {amc.Amount.Currency.Code} (tolerance {amc.AmountTolerance})"
+            : "any amount";
+        var bodyPatternDescription = string.IsNullOrEmpty(email.BodyPattern)
+            ? "no body pattern configured"
+            : $"body pattern '{email.BodyPattern}'";
+
+        if (candidateCount == 0)
+        {
+            return $"No email from {email.SenderEmailAddress} received between {windowStart:yyyy-MM-dd} and " +
+                $"{windowEnd:yyyy-MM-dd} matched {bodyPatternDescription}.";
+        }
+
+        if (rejectedCandidates.Count == 0)
+        {
+            // No candidate ever had a readable PDF attachment to check against criteria at
+            // all (see the "matched_email_has_no_pdf" path) - an amount clause here would
+            // wrongly imply an attachment was found and rejected on amount.
+            return $"{candidateCount} email(s) from {email.SenderEmailAddress} matched the date window " +
+                $"({windowStart:yyyy-MM-dd} to {windowEnd:yyyy-MM-dd}) and {bodyPatternDescription}, but none had a " +
+                $"PDF attachment to check.";
+        }
+
+        // Different rejected candidates can fail for different reasons (one on date, another
+        // on amount) - the sentence below only ever attributes a specific reason to the
+        // nearest candidate, never generalizes one candidate's rejection reason to the whole
+        // rejected set.
+        var nearest = rejectedCandidates.OrderBy(candidate => criteria.DateDistanceDays(candidate.Date)).First();
+        var nearestRejectionReason = nearest.WithinDateTolerance
+            ? $"the expected amount {amountDescription}"
+            : $"the {criteria.DateToleranceDays}-day invoice-date tolerance around {criteria.ExpectedDate:yyyy-MM-dd}";
+
+        return $"{candidateCount} email(s) from {email.SenderEmailAddress} matched the date window " +
+            $"({windowStart:yyyy-MM-dd} to {windowEnd:yyyy-MM-dd}) and {bodyPatternDescription}; " +
+            $"{rejectedCandidates.Count} PDF attachment(s) extracted but none satisfied the search criteria; " +
+            $"nearest was dated {nearest.Date:yyyy-MM-dd} for {nearest.Total.Amount} {nearest.Total.Currency}, " +
+            $"which did not satisfy {nearestRejectionReason}.";
+    }
+
+    /// <summary>
+    /// A successfully-extracted PDF attachment that failed the search criteria - carries
+    /// which side of the check it failed, since <see cref="InvoiceSearchCriteria.Matches"/>
+    /// rejects on invoice date, amount, or both, and a diagnostic that blames "amount" for a
+    /// candidate rejected only on date (or vice versa) misleads whoever reads it.
+    /// </summary>
+    private sealed record RejectedEmailCandidate(DateOnly Date, Money Total, bool WithinDateTolerance);
 
     private async Task<IReadOnlyList<GraphMessage>> ListCandidateMessagesAsync(
         GraphEmailIntegrationConfiguration email,
@@ -280,8 +364,12 @@ public sealed class GraphEmailInvoiceSource(
     /// <summary>A PDF attachment extracted successfully and satisfied the search criteria.</summary>
     private sealed record EmailInvoiceFound(byte[] PdfContent, PdfExtractionSucceeded Extraction, string AttachmentName);
 
-    /// <summary>Every PDF attachment extracted fine but none satisfied the date/amount criteria — the wrong invoice, not an error.</summary>
-    private sealed record EmailInvoiceCriteriaMismatch;
+    /// <summary>
+    /// Every PDF attachment extracted fine but none satisfied the date/amount criteria —
+    /// the wrong invoice, not an error. Carries each rejected attachment's actual date/total
+    /// so the caller's diagnostic can report the nearest one.
+    /// </summary>
+    private sealed record EmailInvoiceCriteriaMismatch(IReadOnlyList<RejectedEmailCandidate> RejectedCandidates);
 
     /// <summary>At least one PDF attachment could not be read at all — a technical failure.</summary>
     private sealed record EmailInvoiceExtractionFailed(string Reason);

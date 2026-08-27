@@ -80,7 +80,15 @@ public sealed class GraphEmailInvoiceSourceTests
 
         var result = await source.FindInvoiceAsync(Criteria());
 
-        Assert.True(result is NoInvoiceMatch, $"Expected NoInvoiceMatch but got {result}.");
+        if (result is not NoInvoiceMatch noMatch)
+        {
+            Assert.Fail($"Expected NoInvoiceMatch but got {result}.");
+            return;
+        }
+
+        // No amount was ever configured or even checked here (no PDF was found to check) -
+        // the diagnostic must not claim otherwise (e.g. "expected amount any amount").
+        Assert.DoesNotContain("amount", noMatch.Diagnostic);
     }
 
     [Fact]
@@ -129,7 +137,80 @@ public sealed class GraphEmailInvoiceSourceTests
         var result = await source.FindInvoiceAsync(Criteria(
             amountMatchingCriteria: new AmountMatchingCriteria(new Money(11.59m, "GBP"), 0m)));
 
-        Assert.True(result is NoInvoiceMatch, $"Expected NoInvoiceMatch but got {result}.");
+        if (result is not NoInvoiceMatch noMatch)
+        {
+            Assert.Fail($"Expected NoInvoiceMatch but got {result}.");
+            return;
+        }
+
+        // The rejected PDF's actual date/amount must appear in the diagnostic - it is the
+        // one piece of information a manual mailbox search can't quickly surface.
+        Assert.Contains("2025-07-12", noMatch.Diagnostic);
+        Assert.Contains("99.99", noMatch.Diagnostic);
+        Assert.Contains("11.59", noMatch.Diagnostic);
+    }
+
+    [Fact]
+    public async Task FindInvoiceAsync_DiagnosticBlamesDate_NotAmount_WhenExtractedInvoiceDateIsOutsideTolerance()
+    {
+        // The email's receivedDateTime is within the search window (so it's a candidate at
+        // all), but the PDF's own extracted invoice date is not - a distinct rejection reason
+        // from an amount mismatch, and one that must not be misreported as "amount" just
+        // because no AmountMatchingCriteria happens to be configured.
+        var handler = MessagesThenAttachments(
+            Messages(("msg-1", "2025-07-12", "Your invoice is attached.")),
+            ("msg-1", Attachments(("att-1", SinglePdfBytes))));
+        var extractor = new FakePdfExtractor(_ => new PdfExtractionSucceeded(new DateOnly(2025, 8, 1), new Money(11.59m, "GBP")));
+        var source = Build(handler, extractor);
+
+        var result = await source.FindInvoiceAsync(Criteria());
+
+        if (result is not NoInvoiceMatch noMatch)
+        {
+            Assert.Fail($"Expected NoInvoiceMatch but got {result}.");
+            return;
+        }
+
+        Assert.Contains("2025-08-01", noMatch.Diagnostic);
+        Assert.Contains("date tolerance", noMatch.Diagnostic);
+        Assert.DoesNotContain("any amount", noMatch.Diagnostic);
+    }
+
+    [Fact]
+    public async Task FindInvoiceAsync_DiagnosticAttributesReason_OnlyToNearestCandidate_WhenRejectionReasonsDiffer()
+    {
+        // Two rejected candidates fail for different reasons: the closer one (by extracted
+        // invoice date) only fails on amount, the further one only fails on date. The
+        // diagnostic must not generalize one candidate's rejection reason ("amount" or "date")
+        // to the whole rejected set - only the nearest candidate's actual reason is reported.
+        var handler = MessagesThenAttachments(
+            Messages(
+                ("msg-1", "2025-07-12", "Your invoice is attached."),
+                ("msg-2", "2025-07-12", "Your invoice is attached.")),
+            ("msg-1", Attachments(("att-1", SinglePdfBytes))),
+            ("msg-2", Attachments(("att-2", SecondPdfBytes))));
+        var extractor = new FakePdfExtractor(content =>
+            content.SequenceEqual(SinglePdfBytes)
+                // Closest to ExpectedDate (2025-07-10): fails on amount only.
+                ? new PdfExtractionSucceeded(new DateOnly(2025, 7, 12), new Money(99.99m, "GBP"))
+                // Far from ExpectedDate: fails on date only (amount happens to be correct).
+                : new PdfExtractionSucceeded(new DateOnly(2025, 8, 1), new Money(11.59m, "GBP")));
+        var source = Build(handler, extractor);
+
+        var result = await source.FindInvoiceAsync(Criteria(
+            amountMatchingCriteria: new AmountMatchingCriteria(new Money(11.59m, "GBP"), 0m)));
+
+        if (result is not NoInvoiceMatch noMatch)
+        {
+            Assert.Fail($"Expected NoInvoiceMatch but got {result}.");
+            return;
+        }
+
+        // The nearest candidate (07-12, 99.99) failed on amount - that reason must be
+        // reported, not the further candidate's date-tolerance failure.
+        Assert.Contains("99.99", noMatch.Diagnostic);
+        Assert.Contains("expected amount", noMatch.Diagnostic);
+        Assert.DoesNotContain("date tolerance", noMatch.Diagnostic);
     }
 
     [Fact]

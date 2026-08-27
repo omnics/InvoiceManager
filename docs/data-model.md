@@ -212,6 +212,12 @@ Candidate fields:
 - `nextInvoiceCreatedAt`
 - `lastError` — present when `status` is `RetrievalError`; the technical failure
   detail from the last retrieval attempt, used for diagnosis
+- `lastMatchDiagnostic` — the source/FreeAgent integration's explanation of why
+  its most recent match attempt found nothing (search window, expected
+  amount/tolerance, and the nearest rejected candidate's actual values, if
+  any). Required when `status` is `NotFound`. Present but optional when
+  `status` is `Expected` or `FreeAgentMatchExpected` - absent for a
+  never-yet-attempted record.
 - `retryCount`
 - `createdAt`
 - `updatedAt`

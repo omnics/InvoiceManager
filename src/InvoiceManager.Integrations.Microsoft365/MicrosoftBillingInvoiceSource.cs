@@ -56,13 +56,13 @@ public sealed class MicrosoftBillingInvoiceSource(
         activity?.SetTag("invoice.candidate_count", invoices.Count);
         if (SelectBestMatch(invoices, criteria) is not BillingInvoice match)
         {
+            var diagnostic = BuildNoMatchDiagnostic(invoices, criteria, billing.BillingAccountId);
             activity?.AddEvent(new ActivityEvent("no_match"));
             logger.LogInformation(
-                "No {IntegrationType} invoice matched criteria for billing account {BillingAccountId} around {ExpectedDate} " +
-                "({CandidateCount} candidate(s) considered).",
+                "No {IntegrationType} invoice matched criteria for billing account {BillingAccountId} around {ExpectedDate}: {Diagnostic}",
                 IntegrationType,
-                billing.BillingAccountId, criteria.ExpectedDate, invoices.Count);
-            return new NoInvoiceMatch();
+                billing.BillingAccountId, criteria.ExpectedDate, diagnostic);
+            return new NoInvoiceMatch(diagnostic);
         }
 
         activity?.SetTag("invoice.matched_name", match.Name);
@@ -136,6 +136,46 @@ public sealed class MicrosoftBillingInvoiceSource(
             .OrderBy(invoice =>
                 criteria.DateDistanceDays(DateOnly.FromDateTime(invoice.Properties.InvoiceDate.UtcDateTime)))
             .FirstOrDefault();
+
+    /// <summary>
+    /// Explains why <see cref="SelectBestMatch"/> found nothing: the date window
+    /// searched, the expected amount/tolerance (if configured), and - if any
+    /// invoices fell within the date window but were rejected on amount - the
+    /// nearest one's actual date/amount, so a price change shows up directly in
+    /// the diagnostic rather than requiring a manual provider lookup.
+    /// </summary>
+    private static string BuildNoMatchDiagnostic(
+        IReadOnlyList<BillingInvoice> invoices, InvoiceSearchCriteria criteria, string billingAccountId)
+    {
+        var windowStart = criteria.ExpectedDate.AddDays(-criteria.DateToleranceDays);
+        var windowEnd = criteria.ExpectedDate.AddDays(criteria.DateToleranceDays);
+        var amountDescription = criteria.AmountMatchingCriteria is AmountMatchingCriteria amc
+            ? $"{amc.Amount.Amount} {amc.Amount.Currency.Code} (tolerance {amc.AmountTolerance})"
+            : "any amount";
+
+        var inWindow = invoices
+            .Select(invoice => new
+            {
+                Date = DateOnly.FromDateTime(invoice.Properties.InvoiceDate.UtcDateTime),
+                Amount = invoice.Properties.TotalAmount,
+                invoice.Name,
+            })
+            .Where(candidate => candidate.Date >= windowStart && candidate.Date <= windowEnd)
+            .OrderBy(candidate => criteria.DateDistanceDays(candidate.Date))
+            .ToList();
+
+        if (inWindow.Count == 0)
+        {
+            return $"No invoice for billing account {billingAccountId} is dated within {criteria.DateToleranceDays} " +
+                $"day(s) of {criteria.ExpectedDate:yyyy-MM-dd} ({windowStart:yyyy-MM-dd} to {windowEnd:yyyy-MM-dd}); " +
+                $"{invoices.Count} invoice(s) considered in the wider search window. Expected amount: {amountDescription}.";
+        }
+
+        var nearest = inWindow[0];
+        return $"{inWindow.Count} invoice(s) dated within tolerance ({windowStart:yyyy-MM-dd} to {windowEnd:yyyy-MM-dd}) " +
+            $"but none matched the expected amount {amountDescription}; nearest was {nearest.Name} on {nearest.Date:yyyy-MM-dd} " +
+            $"for {nearest.Amount.Value} {nearest.Amount.Currency}.";
+    }
 
     private async Task<string> RequestDownloadUrlAsync(
         string billingAccountId,
