@@ -59,7 +59,7 @@ public sealed class InvoiceRecordResync(
         var resynced = record with
         {
             ProcessingSnapshot = InvoiceProcessingSnapshot.FromConfiguration(stored.Configuration),
-            State = new Expected(),
+            State = new Expected(Option.None),
         };
         await recordRepository.ReplaceAsync(resynced, cancellationToken);
         logger.LogInformation(

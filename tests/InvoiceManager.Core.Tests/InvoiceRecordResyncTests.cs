@@ -80,9 +80,9 @@ public sealed class InvoiceRecordResyncTests
 
         return stateType.Name switch
         {
-            nameof(Expected) => new Expected(),
+            nameof(Expected) => new Expected(Option.None),
             nameof(RetrievalError) => new RetrievalError("earlier transient failure"),
-            nameof(NotFound) => new NotFound(),
+            nameof(NotFound) => new NotFound("no invoice found within tolerance"),
             nameof(Retrieved) => new Retrieved(actualDetails),
             nameof(SavedToOneDrive) => new SavedToOneDrive(actualDetails, oneDriveDetails),
             _ => throw new ArgumentOutOfRangeException(nameof(stateType), stateType, "Unhandled state type in test."),
