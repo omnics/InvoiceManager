@@ -60,8 +60,11 @@ the next expected record itself — `ExpectedRecordGenerator` does, run
 immediately before `DueInvoiceProcessor` in both Functions entry points
 (`GenerateExpectedRecordsTimer`/`GenerateExpectedRecordsHttp`). A record
 reaching a success state this run is picked up on the *next* invocation of that
-generator, not this one, since generation is idempotent per period - a delay of
-at most one processing cycle, never a missed or duplicated record.
+generator while the configuration remains active (`GenerateForAllActiveAsync`
+only reloads active configurations) - a delay of at most one processing cycle
+in the normal case, or until reactivation if the configuration was deactivated
+in between. Either way, generation is idempotent per period, so there is never
+a missed or duplicated record once it does run.
 
 OneDrive reconciliation (steps 3–4) is implemented: for each due record the
 processor first asks the OneDrive integration to search the configured
