@@ -94,7 +94,7 @@ public sealed class CosmosInvoiceRecordRepositoryTests : IAsyncLifetime
         var expectedDue = BuildRecord(
             new InvoiceConfigurationId("due-expected"),
             new DateOnly(2025, 7, 1),
-            state: new Expected());
+            state: new Expected(Option.None));
         var retrievalErrorDue = BuildRecord(
             new InvoiceConfigurationId("due-retrievalerror"),
             new DateOnly(2025, 7, 3),
@@ -106,11 +106,11 @@ public sealed class CosmosInvoiceRecordRepositoryTests : IAsyncLifetime
         var futureExpected = BuildRecord(
             new InvoiceConfigurationId("future-expected"),
             new DateOnly(2025, 8, 1),
-            state: new Expected());
+            state: new Expected(Option.None));
         var notFoundDue = BuildRecord(
             new InvoiceConfigurationId("due-notfound"),
             new DateOnly(2025, 7, 5),
-            state: new NotFound());
+            state: new NotFound("test diagnostic"));
         var savedDue = BuildRecord(
             new InvoiceConfigurationId("saved-due"),
             new DateOnly(2025, 7, 6),
@@ -122,7 +122,8 @@ public sealed class CosmosInvoiceRecordRepositoryTests : IAsyncLifetime
             new DateOnly(2025, 7, 7),
             state: new FreeAgentMatchExpected(
                 BuildActualDetails(),
-                new OneDriveDetails("/drives/test/root:/Bills/Test/fa-match.pdf", "test-drive", "fa-match-item")));
+                new OneDriveDetails("/drives/test/root:/Bills/Test/fa-match.pdf", "test-drive", "fa-match-item"),
+                Option.None));
         var freeAgentErrorDue = BuildRecord(
             new InvoiceConfigurationId("freeagent-error-due"),
             new DateOnly(2025, 7, 8),
@@ -170,7 +171,7 @@ public sealed class CosmosInvoiceRecordRepositoryTests : IAsyncLifetime
         var record = BuildRecord(
             new InvoiceConfigurationId("retrieval-error-record"),
             new DateOnly(2025, 7, 1),
-            state: new Expected());
+            state: new Expected(Option.None));
         await repository!.CreateIfNotExistsAsync(record);
 
         var errored = record with { State = new RetrievalError("billing API returned 503") };
@@ -192,7 +193,7 @@ public sealed class CosmosInvoiceRecordRepositoryTests : IAsyncLifetime
         var record = BuildRecord(
             new InvoiceConfigurationId("replace-record"),
             new DateOnly(2025, 7, 1),
-            state: new Expected());
+            state: new Expected(Option.None));
         await repository!.CreateIfNotExistsAsync(record);
 
         var actualDetails = BuildActualDetails(
@@ -226,7 +227,7 @@ public sealed class CosmosInvoiceRecordRepositoryTests : IAsyncLifetime
         new(
             configurationId,
             expectedDate,
-            state ?? new Expected(),
+            state ?? new Expected(Option.None),
             new InvoiceProcessingSnapshot(
                 new MicrosoftBillingIntegrationConfiguration("billing-id"),
                 new OneDriveFolder("test-drive", "Test Drive", "test-folder-item", "/Bills/Test"),

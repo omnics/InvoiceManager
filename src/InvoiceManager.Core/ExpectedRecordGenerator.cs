@@ -74,7 +74,7 @@ public sealed class ExpectedRecordGenerator(
         var record = new InvoiceRecord(
             configuration.Id,
             nextExpectedDate.Date,
-            new Expected(),
+            new Expected(Option.None),
             InvoiceProcessingSnapshot.FromConfiguration(configuration));
 
         await repository.CreateIfNotExistsAsync(record, cancellationToken);

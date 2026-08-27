@@ -14,7 +14,14 @@ public sealed record FreeAgentBillSearchCriteria(
     decimal AmountTolerance);
 
 /// <summary>No FreeAgent bill matched the search criteria.</summary>
-public sealed record NoFreeAgentBillMatch;
+/// <param name="Diagnostic">
+/// Human-readable detail on why nothing matched - the contact, date window,
+/// expected amount/tolerance, how many bills FreeAgent returned in the date
+/// window, and the nearest rejected candidate's amount, if any. Carried into
+/// <see cref="InvoiceManager.Core.FreeAgentMatchExpected"/>'s last-match diagnostic so an
+/// administrator can see why a record is stuck without re-querying FreeAgent.
+/// </param>
+public sealed record NoFreeAgentBillMatch(string Diagnostic);
 
 /// <summary>
 /// More than one FreeAgent bill matched the search criteria. Never resolved by

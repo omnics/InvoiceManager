@@ -3,7 +3,15 @@ namespace InvoiceManager.Core.Integrations;
 /// <summary>
 /// No source-system invoice satisfied the supplied criteria.
 /// </summary>
-public sealed record NoInvoiceMatch;
+/// <param name="Diagnostic">
+/// Human-readable detail on why nothing matched - the search window, expected
+/// amount/tolerance, how many candidates were considered, and the nearest
+/// rejected candidate's actual date/amount, if any. Carried into the
+/// <see cref="InvoiceManager.Core.Expected"/>/<see cref="InvoiceManager.Core.NotFound"/> workflow states so an
+/// administrator can see why a record hasn't matched without re-deriving it
+/// from provider logs.
+/// </param>
+public sealed record NoInvoiceMatch(string Diagnostic);
 
 /// <summary>
 /// A source-system invoice satisfied the criteria. Carries the downloaded PDF

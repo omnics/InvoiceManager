@@ -36,7 +36,7 @@ public sealed class NextExpectedInvoiceDateTests
     public void CalculateNext_ReturnsInProgress_WhenMostRecentRecordIsBeforeSaved()
     {
         var config = Configurations.Build(startDate: new DateOnly(2025, 7, 10));
-        var mostRecent = Records.Build(config, state: new Expected());
+        var mostRecent = Records.Build(config, state: new Expected(Option.None));
 
         var result = NextExpectedInvoiceDate.CalculateNext(config, mostRecent);
 

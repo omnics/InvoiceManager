@@ -46,7 +46,7 @@ internal sealed class FreeAgentBillMatcher : IFreeAgentBillMatcher
 
         return matches.Count switch
         {
-            0 => new NoFreeAgentBillMatch(),
+            0 => new NoFreeAgentBillMatch(BuildNoMatchDiagnostic(candidates, criteria)),
             1 => new FreeAgentBillFound(matches[0].ToSnapshot()),
             _ => new AmbiguousFreeAgentBillMatch(
                 matches.Select(m => new FreeAgentBillIdentity(m.Url!)).ToList()),
@@ -64,5 +64,41 @@ internal sealed class FreeAgentBillMatcher : IFreeAgentBillMatcher
 
         var expected = criteria.ExpectedAmount.Amount;
         return Math.Abs(totalValue - expected) <= criteria.AmountTolerance;
+    }
+
+    /// <summary>
+    /// Explains why no candidate bill matched: the contact, date window, expected
+    /// amount/tolerance, how many bills FreeAgent returned in that window (already
+    /// server-side filtered by contact+date), and - if any - the nearest one's
+    /// actual amount, so a FreeAgent-side price change shows up directly rather
+    /// than requiring a manual bill lookup.
+    /// </summary>
+    private static string BuildNoMatchDiagnostic(IReadOnlyList<BillWire> candidates, FreeAgentBillSearchCriteria criteria)
+    {
+        var windowStart = criteria.ExpectedDate.AddDays(-criteria.DateToleranceDays);
+        var windowEnd = criteria.ExpectedDate.AddDays(criteria.DateToleranceDays);
+        var expected = criteria.ExpectedAmount;
+        var amountDescription = $"{expected.Amount} {expected.Currency.Code} (tolerance {criteria.AmountTolerance})";
+
+        if (candidates.Count == 0)
+        {
+            return $"No FreeAgent bill for contact {criteria.ContactUrl.Url} is dated between {windowStart:yyyy-MM-dd} " +
+                $"and {windowEnd:yyyy-MM-dd}. Expected amount: {amountDescription}.";
+        }
+
+        var nearest = candidates
+            .Where(bill => bill.TotalValue is not null &&
+                decimal.TryParse(bill.TotalValue, System.Globalization.CultureInfo.InvariantCulture, out _))
+            .OrderBy(bill => Math.Abs(
+                decimal.Parse(bill.TotalValue!, System.Globalization.CultureInfo.InvariantCulture) - expected.Amount))
+            .FirstOrDefault();
+
+        return nearest is null
+            ? $"{candidates.Count} FreeAgent bill(s) found for contact {criteria.ContactUrl.Url} dated between " +
+                $"{windowStart:yyyy-MM-dd} and {windowEnd:yyyy-MM-dd}, but none had a parsable total value. " +
+                $"Expected amount: {amountDescription}."
+            : $"{candidates.Count} FreeAgent bill(s) found for contact {criteria.ContactUrl.Url} dated between " +
+                $"{windowStart:yyyy-MM-dd} and {windowEnd:yyyy-MM-dd}, but none matched the expected amount " +
+                $"{amountDescription}; nearest was {nearest.Url} for {nearest.TotalValue} {nearest.Currency}.";
     }
 }

@@ -13,7 +13,7 @@ public static class Records
         return new InvoiceRecord(
             resolvedConfig.Id,
             expectedDate ?? resolvedConfig.StartDate,
-            state ?? new Expected(),
+            state ?? new Expected(Option.None),
             InvoiceProcessingSnapshot.FromConfiguration(resolvedConfig));
     }
 }

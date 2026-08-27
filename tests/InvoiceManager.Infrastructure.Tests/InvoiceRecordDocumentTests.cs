@@ -18,9 +18,29 @@ public sealed class InvoiceRecordDocumentTests
         new SourceInvoiceId("G152207778"));
 
     [Fact]
-    public void RoundTrip_PreservesRecord_WhenStateIsExpected()
+    public void RoundTrip_PreservesRecord_WhenStateIsExpected_WithNoDiagnosticYet()
     {
-        var record = BuildRecord(new Expected());
+        var record = BuildRecord(new Expected(Option.None));
+
+        var roundTripped = InvoiceRecordDocument.FromRecord(record).ToRecord();
+
+        Assert.Equal(record, roundTripped);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesRecord_WhenStateIsExpected_WithLastDiagnostic()
+    {
+        var record = BuildRecord(new Expected("2 invoice(s) found but none matched the expected amount."));
+
+        var roundTripped = InvoiceRecordDocument.FromRecord(record).ToRecord();
+
+        Assert.Equal(record, roundTripped);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesRecord_WhenStateIsNotFound()
+    {
+        var record = BuildRecord(new NotFound("No invoice dated within 5 day(s) of 2025-07-01."));
 
         var roundTripped = InvoiceRecordDocument.FromRecord(record).ToRecord();
 
@@ -64,11 +84,25 @@ public sealed class InvoiceRecordDocumentTests
     }
 
     [Fact]
-    public void RoundTrip_PreservesRecord_WhenStateIsFreeAgentMatchExpected()
+    public void RoundTrip_PreservesRecord_WhenStateIsFreeAgentMatchExpected_WithNoDiagnosticYet()
     {
         var record = BuildRecord(new FreeAgentMatchExpected(
             SampleActualDetails,
-            new OneDriveDetails(OneDriveLocation, DriveId, ItemId)));
+            new OneDriveDetails(OneDriveLocation, DriveId, ItemId),
+            Option.None));
+
+        var roundTripped = InvoiceRecordDocument.FromRecord(record).ToRecord();
+
+        Assert.Equal(record, roundTripped);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesRecord_WhenStateIsFreeAgentMatchExpected_WithLastMatchDiagnostic()
+    {
+        var record = BuildRecord(new FreeAgentMatchExpected(
+            SampleActualDetails,
+            new OneDriveDetails(OneDriveLocation, DriveId, ItemId),
+            "No FreeAgent bill found in the date window."));
 
         var roundTripped = InvoiceRecordDocument.FromRecord(record).ToRecord();
 
@@ -137,6 +171,16 @@ public sealed class InvoiceRecordDocumentTests
             "Invoice record document 'config-1_2025-07-01' has status 'SavedToOneDrive' " +
             "but is missing 'oneDriveDetails'.",
             ex.Message);
+    }
+
+    [Fact]
+    public void ToRecord_DefaultsToEmptyDiagnostic_WhenNotFoundDocumentPredatesTheField()
+    {
+        var document = BuildDocument(status: "NotFound");
+
+        var record = document.ToRecord();
+
+        Assert.Equal(new NotFound(string.Empty), record.State);
     }
 
     [Fact]

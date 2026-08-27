@@ -101,11 +101,12 @@ public sealed class GraphEmailInvoiceSource(
                 $"an invoice: {string.Join("; ", extractionFailures)}.");
         }
 
+        var diagnostic = BuildNoMatchDiagnostic(email, criteria, candidates.Count);
         activity?.AddEvent(new ActivityEvent("no_match"));
         logger.LogInformation(
-            "No email matched criteria for sender {Sender} around {ExpectedDate} ({CandidateCount} candidate(s) considered).",
-            email.SenderEmailAddress, criteria.ExpectedDate, candidates.Count);
-        return new NoInvoiceMatch();
+            "No email matched criteria for sender {Sender} around {ExpectedDate}: {Diagnostic}",
+            email.SenderEmailAddress, criteria.ExpectedDate, diagnostic);
+        return new NoInvoiceMatch(diagnostic);
     }
 
     /// <summary>
@@ -156,6 +157,31 @@ public sealed class GraphEmailInvoiceSource(
             ? new EmailInvoiceExtractionFailed(
                 $"{readFailures.Count} of {pdfAttachments.Count} PDF attachment(s) could not be read: {string.Join("; ", readFailures)}")
             : new EmailInvoiceCriteriaMismatch();
+    }
+
+    /// <summary>
+    /// Explains why no candidate email's PDF attachment satisfied the criteria: the
+    /// sender, date window, optional body pattern, expected amount/tolerance (if
+    /// configured), and how many candidate emails were considered in the window.
+    /// </summary>
+    private static string BuildNoMatchDiagnostic(
+        GraphEmailIntegrationConfiguration email, InvoiceSearchCriteria criteria, int candidateCount)
+    {
+        var windowStart = criteria.ExpectedDate.AddDays(-criteria.DateToleranceDays);
+        var windowEnd = criteria.ExpectedDate.AddDays(criteria.DateToleranceDays);
+        var amountDescription = criteria.AmountMatchingCriteria is AmountMatchingCriteria amc
+            ? $"{amc.Amount.Amount} {amc.Amount.Currency.Code} (tolerance {amc.AmountTolerance})"
+            : "any amount";
+        var bodyPatternDescription = string.IsNullOrEmpty(email.BodyPattern)
+            ? "no body pattern configured"
+            : $"body pattern '{email.BodyPattern}'";
+
+        return candidateCount == 0
+            ? $"No email from {email.SenderEmailAddress} received between {windowStart:yyyy-MM-dd} and " +
+                $"{windowEnd:yyyy-MM-dd} matched {bodyPatternDescription}."
+            : $"{candidateCount} email(s) from {email.SenderEmailAddress} matched the date window " +
+                $"({windowStart:yyyy-MM-dd} to {windowEnd:yyyy-MM-dd}) and {bodyPatternDescription}, but none had a " +
+                $"readable PDF attachment matching the expected amount {amountDescription}.";
     }
 
     private async Task<IReadOnlyList<GraphMessage>> ListCandidateMessagesAsync(
