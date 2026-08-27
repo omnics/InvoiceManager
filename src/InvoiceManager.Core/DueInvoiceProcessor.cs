@@ -113,9 +113,9 @@ public sealed class DueInvoiceProcessor(
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                // A failure outside retrieval (for example a save or next-record step) leaves
-                // the record in its last persisted, already-retryable state. Report it without
-                // stopping the other records.
+                // A failure outside retrieval (for example a save step) leaves the record in
+                // its last persisted, already-retryable state. Report it without stopping the
+                // other records.
                 recordActivity?.SetTag("invoice.outcome", "failed");
                 recordActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 recordActivity?.AddException(ex);

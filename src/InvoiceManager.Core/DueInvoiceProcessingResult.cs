@@ -1,16 +1,20 @@
 namespace InvoiceManager.Core;
 
 /// <summary>
-/// The due invoice was retrieved and saved to OneDrive, and the next expected
-/// record was created. If the configuration uses FreeAgent, the bill was also
-/// matched, reconciled, and attached.
+/// The due invoice was retrieved and saved to OneDrive. If the configuration uses
+/// FreeAgent, the bill was also matched, reconciled, and attached. Reaching this
+/// state is a success state for <see cref="ExpectedRecordGenerator"/>'s purposes,
+/// but that generator - not this processor - is what creates the next expected
+/// record, on its next run.
 /// </summary>
 public sealed record ProcessingSucceeded(InvoiceRecordId RecordId);
 
 /// <summary>
 /// The due invoice was matched to a file already present in OneDrive: the record
-/// was set to <see cref="ReconciledFromOneDrive"/> and the next expected record
-/// created, without calling the source integration or re-uploading.
+/// was set to <see cref="ReconciledFromOneDrive"/>, without calling the source
+/// integration or re-uploading. As with <see cref="ProcessingSucceeded"/>, the
+/// next expected record is created by <see cref="ExpectedRecordGenerator"/> on
+/// its next run, not by this processor.
 /// </summary>
 public sealed record ProcessingReconciled(InvoiceRecordId RecordId);
 

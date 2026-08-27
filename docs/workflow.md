@@ -56,8 +56,8 @@ records (steps 1–2), retrieves a match from the Microsoft 365 source integrati
 (`Expected → Retrieved → SavedToOneDrive`). If a run fails after `Retrieved` and
 before `SavedToOneDrive`, the next run treats that record as due again and
 resumes the source retrieval/save path. `DueInvoiceProcessor` does not create
-the next expected record itself (step 10) — `ExpectedRecordGenerator` does,
-run immediately before `DueInvoiceProcessor` in both Functions entry points
+the next expected record itself — `ExpectedRecordGenerator` does, run
+immediately before `DueInvoiceProcessor` in both Functions entry points
 (`GenerateExpectedRecordsTimer`/`GenerateExpectedRecordsHttp`). A record
 reaching a success state this run is picked up on the *next* invocation of that
 generator, not this one, since generation is idempotent per period - a delay of
