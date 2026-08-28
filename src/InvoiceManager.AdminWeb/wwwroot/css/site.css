@@ -736,22 +736,6 @@ pre {
 .sync-pill-needs-attention { background: var(--warning-bg); color: #8a6d16; }
 .sync-pill-in-progress { background: var(--progress-bg, #eaf2fb); color: var(--progress-ink, #2c5a86); }
 
-.confirm-callout {
-  margin-top: 8px;
-  padding: 10px 14px;
-  border: 1px solid var(--warning-line);
-  border-radius: 8px;
-  background: var(--warning-bg);
-  font-size: .82rem;
-  color: #6b551a;
-  display: flex;
-  align-items: center;
-  gap: .6rem;
-  flex-wrap: wrap;
-}
-.confirm-callout label { display: inline-flex; gap: .4rem; align-items: center; font-weight: 650; }
-.confirm-callout .secondary-action { min-height: 32px; padding: 0 12px; }
-
 /* Row actions: a "..." kebab menu, the standard pattern for more than one
    per-row action in a data grid (GitHub, Gmail, etc.) - keeps the grid's
    columns from growing a button per action as more actions are added. */
@@ -797,7 +781,9 @@ pre {
 }
 
 .row-action-item {
-  display: block;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
   width: 100%;
   min-height: 36px;
   padding: 0 10px;
