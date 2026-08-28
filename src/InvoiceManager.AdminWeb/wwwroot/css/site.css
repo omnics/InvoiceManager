@@ -12,6 +12,11 @@
   --success-bg: #e9f7ee;
   --success-line: #3fa661;
   --danger: #b3261e;
+  /* "In progress" needs a third semantic color for the invoice sync dashboard, distinct from
+     success/warning/danger. Kept analogous to --primary (same blue family). */
+  --progress-bg: #eaf2fb;
+  --progress-line: #9db8d6;
+  --progress-ink: #2c5a86;
 }
 
 html {
@@ -649,3 +654,102 @@ pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* ====================================================================
+   Invoice sync status grid (home page, #128): a real CSS grid shared by
+   every cell (not one grid per row), so columns genuinely line up
+   left-aligned across rows - role="table"/"rowgroup"/"row"/"cell" on
+   display:contents wrapper elements keep real table semantics for
+   assistive tech while the cells participate directly in one set of
+   grid tracks. Row spacing is plain `row-gap`, not empty spacer rows. */
+.invoice-sync-grid {
+  display: grid;
+  grid-template-columns: 4px minmax(150px, 1.3fr) minmax(110px, .8fr) minmax(120px, .9fr) minmax(170px, 1.6fr) minmax(90px, auto);
+  row-gap: 10px;
+  min-width: 780px;
+  font-size: .92rem;
+}
+
+.invoice-sync-grid [role="columnheader"] {
+  padding: 0 14px 10px;
+  font-size: .78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .02em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.invoice-sync-grid [role="cell"] {
+  display: flex;
+  align-items: center;
+  padding: 14px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.invoice-sync-grid .stripe-cell {
+  padding: 0;
+  border: none !important;
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
+}
+.invoice-sync-row.bucket-complete .stripe-cell { background: var(--success-line); }
+.invoice-sync-row.bucket-needs-attention .stripe-cell { background: var(--warning-line); }
+.invoice-sync-row.bucket-in-progress .stripe-cell { background: var(--progress-line, #9db8d6); }
+
+.invoice-sync-grid .stripe-cell + [role="cell"] { border-left: 1px solid var(--line); }
+.invoice-sync-grid [role="row"] > [role="cell"]:last-child {
+  border-right: 1px solid var(--line);
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+.invoice-sync-grid .config-cell { flex-direction: column; align-items: flex-start; }
+.invoice-sync-grid .config-name { font-weight: 650; }
+.invoice-sync-grid .config-sub { margin-top: 2px; font-size: .78rem; color: var(--muted); font-weight: 500; }
+.invoice-sync-grid .date-cell { flex-direction: column; align-items: flex-start; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.invoice-sync-grid .date-sub { font-size: .78rem; color: var(--muted); font-weight: 500; }
+.invoice-sync-grid .diagnostic { color: var(--muted); font-size: .85rem; }
+.invoice-sync-grid .diagnostic.is-error { color: var(--danger); }
+
+.invoice-sync-row.is-inactive [role="cell"]:not(.stripe-cell) { opacity: .6; }
+
+.sync-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .2rem .6rem;
+  border-radius: 100px;
+  font-size: .8rem;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: help;
+}
+.sync-pill::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
+.sync-pill-complete { background: var(--success-bg); color: #2b7a48; }
+.sync-pill-needs-attention { background: var(--warning-bg); color: #8a6d16; }
+.sync-pill-in-progress { background: var(--progress-bg, #eaf2fb); color: var(--progress-ink, #2c5a86); }
+
+.resync-details > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.resync-details > summary::-webkit-details-marker { display: none; }
+
+.confirm-callout {
+  margin-top: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--warning-line);
+  border-radius: 8px;
+  background: var(--warning-bg);
+  font-size: .82rem;
+  color: #6b551a;
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex-wrap: wrap;
+}
+.confirm-callout label { display: inline-flex; gap: .4rem; align-items: center; font-weight: 650; }
+.confirm-callout .secondary-action { min-height: 32px; padding: 0 12px; }

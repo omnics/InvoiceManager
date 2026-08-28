@@ -12,6 +12,15 @@ public interface IInvoiceRecordRepository
     Task<Option<InvoiceRecord>> GetMostRecentAsync(InvoiceConfigurationId configurationId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns the most recent invoice record (by expected date) for the given configuration
+    /// whose state is a terminal success - <see cref="SavedToOneDrive"/>, <see cref="ReconciledFromOneDrive"/>,
+    /// or <see cref="FreeAgentAttached"/> - or <see cref="Core.None"/> if the configuration has
+    /// never completed a record. Used alongside <see cref="GetMostRecentAsync"/> to show "last
+    /// completed" next to a current record that is still in progress or needs attention.
+    /// </summary>
+    Task<Option<InvoiceRecord>> GetMostRecentCompletedAsync(InvoiceConfigurationId configurationId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Persists a new invoice record. If a record with the same ID already exists (i.e. the same
     /// configuration and expected date), the call is a no-op — the existing record is not overwritten.
     /// </summary>

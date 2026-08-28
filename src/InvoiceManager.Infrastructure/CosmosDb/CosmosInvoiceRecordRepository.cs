@@ -51,6 +51,36 @@ public sealed class CosmosInvoiceRecordRepository : IInvoiceRecordRepository
         return Option.None;
     }
 
+    public async Task<Option<InvoiceRecord>> GetMostRecentCompletedAsync(
+        InvoiceConfigurationId configurationId,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new QueryDefinition(
+            "SELECT TOP 1 * FROM c WHERE c.configurationId = @configurationId " +
+            "AND c.status IN (@savedStatus, @reconciledStatus, @attachedStatus) " +
+            "ORDER BY c.expectedDate DESC")
+            .WithParameter("@configurationId", configurationId.Value)
+            .WithParameter("@savedStatus", nameof(SavedToOneDrive))
+            .WithParameter("@reconciledStatus", nameof(ReconciledFromOneDrive))
+            .WithParameter("@attachedStatus", nameof(FreeAgentAttached));
+
+        using var iterator = container.GetItemQueryIterator<InvoiceRecordDocument>(
+            query,
+            requestOptions: new QueryRequestOptions
+            {
+                PartitionKey = new PartitionKey(configurationId.Value),
+            });
+
+        while (iterator.HasMoreResults)
+        {
+            var page = await iterator.ReadNextAsync(cancellationToken);
+            foreach (var document in page)
+                return document.ToRecord();
+        }
+
+        return Option.None;
+    }
+
     public async Task CreateIfNotExistsAsync(InvoiceRecord record, CancellationToken cancellationToken = default)
     {
         var document = InvoiceRecordDocument.FromRecord(record);

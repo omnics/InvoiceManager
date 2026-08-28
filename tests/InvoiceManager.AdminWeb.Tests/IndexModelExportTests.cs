@@ -60,9 +60,13 @@ public sealed class IndexModelExportTests
     private sealed class FakeInvoiceRecordResyncTrigger : IInvoiceRecordResyncTrigger
     {
         public Task<InvoiceRecordResyncTriggerResult> TriggerAsync(
-            InvoiceConfigurationId configurationId, IntegrationType integrationType, CancellationToken cancellationToken) =>
+            InvoiceConfigurationId configurationId,
+            IntegrationType integrationType,
+            InvoiceConfigurationActor actor,
+            bool confirmed,
+            CancellationToken cancellationToken) =>
             Task.FromResult<InvoiceRecordResyncTriggerResult>(
-                new InvoiceRecordResyncTriggerSucceeded(new InvoiceRecordId("test-record")));
+                new InvoiceRecordResyncTriggerSucceeded(InvoiceRecordId.NewId(new DateOnly(2025, 7, 1), configurationId)));
     }
 
     private sealed class FakeMicrosoftAuthorizationStore(bool hasTokenCache) : IMicrosoftAuthorizationStore

@@ -89,6 +89,40 @@ public sealed class CosmosInvoiceRecordRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetMostRecentCompletedAsync_ReturnsLatestTerminalSuccess_SkippingALaterInProgressRecord()
+    {
+        var configurationId = new InvoiceConfigurationId("most-recent-completed");
+        var completed = BuildRecord(
+            configurationId,
+            new DateOnly(2025, 6, 1),
+            state: new SavedToOneDrive(
+                BuildActualDetails(),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/completed.pdf", "test-drive", "completed-item")));
+        var laterInProgress = BuildRecord(
+            configurationId,
+            new DateOnly(2025, 7, 1),
+            state: new Expected(Option.None));
+
+        await repository!.CreateIfNotExistsAsync(completed);
+        await repository.CreateIfNotExistsAsync(laterInProgress);
+
+        var stored = RequireRecord(await repository.GetMostRecentCompletedAsync(configurationId));
+        Assert.Equal(completed.Id, stored.Id);
+    }
+
+    [Fact]
+    public async Task GetMostRecentCompletedAsync_ReturnsNone_WhenConfigurationHasNeverCompletedARecord()
+    {
+        var configurationId = new InvoiceConfigurationId("never-completed");
+        await repository!.CreateIfNotExistsAsync(
+            BuildRecord(configurationId, new DateOnly(2025, 7, 1), state: new Expected(Option.None)));
+
+        var result = await repository.GetMostRecentCompletedAsync(configurationId);
+
+        Assert.True(result is None);
+    }
+
+    [Fact]
     public async Task ListDueAsync_ReturnsRetryableRecordsDueOnOrBeforeDate()
     {
         var expectedDue = BuildRecord(

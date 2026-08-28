@@ -28,20 +28,24 @@ public sealed class ResyncInvoiceRecordHttp(
     {
         var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
 
-        if (ParseRequest(query["configurationId"], query["integrationType"]) is not ParsedRequest parsed)
+        if (ParseRequest(
+                query["configurationId"], query["integrationType"],
+                query["actorObjectId"], query["actorDisplayName"], query["confirmed"])
+            is not ParsedRequest parsed)
         {
             var badRequest = req.CreateResponse(HttpStatusCode.BadRequest);
             await badRequest.WriteStringAsync(
-                "Both 'configurationId' and a valid 'integrationType' query parameters are required.", cancellationToken);
+                "'configurationId', a valid 'integrationType', 'actorObjectId', and 'actorDisplayName' query " +
+                "parameters are all required.", cancellationToken);
             return badRequest;
         }
 
-        var (configurationId, integrationType) = parsed;
+        var (configurationId, integrationType, actor, confirmed) = parsed;
 
         logger.LogInformation(
             "Invoice record resync triggered by HTTP request for configuration {ConfigurationId}.", configurationId);
 
-        var result = await resync.ResyncMostRecentAsync(configurationId, integrationType, cancellationToken);
+        var result = await resync.ResyncMostRecentAsync(configurationId, integrationType, actor, confirmed, cancellationToken);
 
         var body = result switch
         {
@@ -49,6 +53,8 @@ public sealed class ResyncInvoiceRecordHttp(
             ResyncConfigurationNotFound => new ResyncResultDto("ConfigurationNotFound", null),
             ResyncNoRecordExists => new ResyncResultDto("NoRecordExists", null),
             ResyncNotEligible notEligible => new ResyncResultDto("NotEligible", notEligible.RecordId.Value),
+            ResyncConfirmationRequired confirmationRequired =>
+                new ResyncResultDto("ConfirmationRequired", confirmationRequired.RecordId.Value),
         };
 
         logger.LogInformation("Invoice record resync outcome for configuration {ConfigurationId}: {Outcome}.", configurationId, body.Outcome);
@@ -66,7 +72,12 @@ public sealed class ResyncInvoiceRecordHttp(
     /// value (for example "999") as well as a missing/unrecognised name - <see cref="Enum.TryParse{TEnum}(string?,out TEnum)"/>
     /// alone accepts any integer-parseable string for a non-flags enum, defined or not.
     /// </summary>
-    public static Option<ParsedRequest> ParseRequest(string? configurationId, string? integrationTypeText)
+    public static Option<ParsedRequest> ParseRequest(
+        string? configurationId,
+        string? integrationTypeText,
+        string? actorObjectId,
+        string? actorDisplayName,
+        string? confirmedText)
     {
         if (string.IsNullOrWhiteSpace(configurationId))
             return Option.None;
@@ -77,10 +88,25 @@ public sealed class ResyncInvoiceRecordHttp(
             return Option.None;
         }
 
-        return new ParsedRequest(new InvoiceConfigurationId(configurationId), integrationType);
+        if (string.IsNullOrWhiteSpace(actorObjectId) || string.IsNullOrWhiteSpace(actorDisplayName))
+            return Option.None;
+
+        // Absent or unparseable is treated as "not confirmed" - a missing/malformed value must
+        // never be silently read as consent to supersede a pending intervention.
+        var confirmed = bool.TryParse(confirmedText, out var parsedConfirmed) && parsedConfirmed;
+
+        return new ParsedRequest(
+            new InvoiceConfigurationId(configurationId),
+            integrationType,
+            new InvoiceConfigurationActor(actorObjectId, actorDisplayName),
+            confirmed);
     }
 
-    public sealed record ParsedRequest(InvoiceConfigurationId ConfigurationId, IntegrationType IntegrationType);
+    public sealed record ParsedRequest(
+        InvoiceConfigurationId ConfigurationId,
+        IntegrationType IntegrationType,
+        InvoiceConfigurationActor Actor,
+        bool Confirmed);
 
     private sealed record ResyncResultDto(string Outcome, string? RecordId);
 }

@@ -14,7 +14,11 @@ namespace InvoiceManager.AdminWeb.Services;
 public interface IInvoiceRecordResyncTrigger
 {
     Task<InvoiceRecordResyncTriggerResult> TriggerAsync(
-        InvoiceConfigurationId configurationId, IntegrationType integrationType, CancellationToken cancellationToken);
+        InvoiceConfigurationId configurationId,
+        IntegrationType integrationType,
+        InvoiceConfigurationActor actor,
+        bool confirmed,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>The resync refreshed the record's snapshot and reset it to Expected.</summary>
@@ -28,6 +32,13 @@ public sealed record InvoiceRecordResyncTriggerConfigurationNotFound;
 
 /// <summary>The configuration's most recent record has already progressed past matching, so it was not resynced.</summary>
 public sealed record InvoiceRecordResyncTriggerNotEligible(InvoiceRecordId RecordId);
+
+/// <summary>
+/// The record is eligible, but resyncing it would supersede a pending administrator decision and
+/// the caller did not pass <c>confirmed: true</c> - checked by the Functions app against the same
+/// record instance it was about to mutate, not the caller's possibly-stale read.
+/// </summary>
+public sealed record InvoiceRecordResyncTriggerConfirmationRequired(InvoiceRecordId RecordId);
 
 /// <summary>No Functions base URL was configured, so no request could be made.</summary>
 public sealed record InvoiceRecordResyncNotConfigured;
@@ -49,6 +60,7 @@ public union InvoiceRecordResyncTriggerResult(
     InvoiceRecordResyncTriggerNoRecordExists,
     InvoiceRecordResyncTriggerConfigurationNotFound,
     InvoiceRecordResyncTriggerNotEligible,
+    InvoiceRecordResyncTriggerConfirmationRequired,
     InvoiceRecordResyncNotConfigured,
     InvoiceRecordResyncFailed);
 
@@ -64,7 +76,11 @@ public sealed class FunctionsInvoiceRecordResyncTrigger(
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
     public async Task<InvoiceRecordResyncTriggerResult> TriggerAsync(
-        InvoiceConfigurationId configurationId, IntegrationType integrationType, CancellationToken cancellationToken)
+        InvoiceConfigurationId configurationId,
+        IntegrationType integrationType,
+        InvoiceConfigurationActor actor,
+        bool confirmed,
+        CancellationToken cancellationToken)
     {
         var functionsBaseUrl = configuration.GetValue<Uri?>("Functions:BaseUrl");
         if (functionsBaseUrl is null)
@@ -74,7 +90,9 @@ public sealed class FunctionsInvoiceRecordResyncTrigger(
 
         var triggerUri = new Uri(
             functionsBaseUrl,
-            $"{TriggerPath}?configurationId={Uri.EscapeDataString(configurationId.Value)}&integrationType={integrationType}");
+            $"{TriggerPath}?configurationId={Uri.EscapeDataString(configurationId.Value)}&integrationType={integrationType}" +
+            $"&actorObjectId={Uri.EscapeDataString(actor.ObjectId)}&actorDisplayName={Uri.EscapeDataString(actor.DisplayName)}" +
+            $"&confirmed={confirmed}");
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, triggerUri);
@@ -121,6 +139,8 @@ public sealed class FunctionsInvoiceRecordResyncTrigger(
         { Outcome: "NoRecordExists" } => new InvoiceRecordResyncTriggerNoRecordExists(),
         { Outcome: "ConfigurationNotFound" } => new InvoiceRecordResyncTriggerConfigurationNotFound(),
         { Outcome: "NotEligible", RecordId: { } id } => new InvoiceRecordResyncTriggerNotEligible(new InvoiceRecordId(id)),
+        { Outcome: "ConfirmationRequired", RecordId: { } id } =>
+            new InvoiceRecordResyncTriggerConfirmationRequired(new InvoiceRecordId(id)),
         _ => new InvoiceRecordResyncFailed($"The Functions app returned an unrecognised resync result: {body}."),
     };
 

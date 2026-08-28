@@ -55,9 +55,11 @@ public sealed class IndexModel(
         return RedirectToPage();
     }
 
-    public async Task<IActionResult> OnPostResyncStuckRecordAsync(string id, IntegrationType integrationType)
+    public async Task<IActionResult> OnPostResyncStuckRecordAsync(
+        string id, IntegrationType integrationType, bool confirmed)
     {
-        var result = await resyncTrigger.TriggerAsync(new(id), integrationType, HttpContext.RequestAborted);
+        var result = await resyncTrigger.TriggerAsync(
+            new(id), integrationType, User.ToConfigurationActor(), confirmed, HttpContext.RequestAborted);
         TempData["StatusMessage"] = result switch
         {
             InvoiceRecordResyncTriggerSucceeded =>
@@ -67,6 +69,9 @@ public sealed class IndexModel(
                 "This configuration has no record yet, so there is nothing to resync.",
             InvoiceRecordResyncTriggerNotEligible =>
                 "The most recent record has already progressed past matching, so it was not resynced.",
+            InvoiceRecordResyncTriggerConfirmationRequired =>
+                "This resync would supersede a pending Guess-removal intervention without a decision being " +
+                "recorded. Confirm before continuing.",
             InvoiceRecordResyncTriggerConfigurationNotFound => "Configuration not found.",
             InvoiceRecordResyncNotConfigured =>
                 "The Functions app URL is not configured, so the resync could not be triggered.",
