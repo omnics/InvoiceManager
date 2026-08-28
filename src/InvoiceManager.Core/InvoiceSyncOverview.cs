@@ -91,6 +91,9 @@ public sealed class InvoiceSyncOverview(
 
     private static DateOnly? ActualDate(InvoiceWorkflowState state) => state switch
     {
+        Expected => null,
+        NotFound => null,
+        RetrievalError => null,
         Retrieved retrieved => retrieved.ActualDetails.ActualInvoiceDate,
         ReconciledFromOneDrive reconciled => reconciled.ActualDetails.ActualInvoiceDate,
         SavedToOneDrive saved => saved.ActualDetails.ActualInvoiceDate,
@@ -100,14 +103,14 @@ public sealed class InvoiceSyncOverview(
         FreeAgentAttached attached => attached.ActualDetails.ActualInvoiceDate,
         FreeAgentInterventionPending pending => pending.ActualDetails.ActualInvoiceDate,
         FreeAgentError freeAgentError => freeAgentError.ActualDetails.ActualInvoiceDate,
-        _ => null,
     };
 
     public static InvoiceSyncBucket Bucket(InvoiceWorkflowState state) => state switch
     {
         SavedToOneDrive or ReconciledFromOneDrive or FreeAgentAttached => InvoiceSyncBucket.Complete,
         NotFound or RetrievalError or FreeAgentError or FreeAgentInterventionPending => InvoiceSyncBucket.NeedsAttention,
-        _ => InvoiceSyncBucket.InProgress,
+        Expected or Retrieved or FreeAgentMatchExpected or FreeAgentBillMatched or FreeAgentBillReconciled =>
+            InvoiceSyncBucket.InProgress,
     };
 
     private static Option<string> Diagnostic(InvoiceWorkflowState state) => state switch
@@ -121,6 +124,8 @@ public sealed class InvoiceSyncOverview(
         FreeAgentBillMatched => "Matched to a FreeAgent bill; awaiting reconciliation",
         FreeAgentBillReconciled => "FreeAgent bill reconciled; awaiting attachment",
         Retrieved => "Retrieved; awaiting save to OneDrive",
-        _ => Option.None,
+        SavedToOneDrive => Option.None,
+        ReconciledFromOneDrive => Option.None,
+        FreeAgentAttached => Option.None,
     };
 }
