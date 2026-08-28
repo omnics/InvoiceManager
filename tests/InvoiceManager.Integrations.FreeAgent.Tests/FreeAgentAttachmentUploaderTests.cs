@@ -55,15 +55,19 @@ public sealed class FreeAgentAttachmentUploaderTests
     }
 
     [Theory]
-    [InlineData("different-name.pdf", 1024)]
-    [InlineData("invoice.pdf", 500)]
-    public async Task UploadAsync_ReturnsUnexpectedExisting_WhenNoOwnHistory_AndOnlyOneOfNameOrSizeMatchesTheUpcomingUpload(
-        string existingFileName, long existingFileSize)
+    [InlineData("different-name.pdf", 1024, null)]
+    [InlineData("invoice.pdf", 500, null)]
+    [InlineData("invoice.pdf", 1024, "image/png")]
+    public async Task UploadAsync_ReturnsUnexpectedExisting_WhenNoOwnHistory_AndOnlyPartOfTheUpcomingUploadMatches(
+        string existingFileName, long existingFileSize, string? existingContentType)
     {
+        // Each case matches two of the three conditions matchesUpcomingUpload requires
+        // (name, size, PDF content type) but not the third, so none should be enough on its
+        // own to make a regression that dropped one of the three checks pass unnoticed.
         var handler = new StubHttpMessageHandler((request, index) =>
             index switch
             {
-                0 => JsonResponse(BillWithAttachmentJson(existingFileName, existingFileSize)),
+                0 => JsonResponse(BillWithAttachmentJson(existingFileName, existingFileSize, existingContentType)),
                 _ => throw new InvalidOperationException("No upload call should have been made."),
             });
         var client = TestClientFactory.Create(handler);

@@ -1118,9 +1118,11 @@ public sealed class DueInvoiceProcessorTests
     public async Task ProcessDueAsync_NeverFabricatesExpectedExisting_OnAFirstAttachAttempt()
     {
         // A record's very first attach attempt (freshly matched via save_fork/reconcile_fork,
-        // never having reached FreeAgentError) must always pass Option.None: any attachment
-        // already on the bill can only belong to someone else, and must never be mistaken for
-        // our own upload by a coincidental filename/size/content-type match.
+        // never having reached FreeAgentError) must always pass Option.None: this record has no
+        // record-backed proof of a prior upload to offer. FreeAgentAttachmentUploader may still
+        // separately recognise a pre-existing attachment as correct via a name/size match
+        // against the file about to be uploaded (see issue #133) - that's a property of the
+        // uploader, not something this processor-level expectedExisting derivation fabricates.
         var matching = new FreeAgentBillMatching(
             new FreeAgentContact(new FreeAgentContactIdentity("https://api.sandbox.freeagent.com/v2/contacts/1"), "Test Contact"),
             DateReconciliation: Option.None,

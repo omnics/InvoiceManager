@@ -8,8 +8,9 @@ public sealed record FreeAgentAttachmentReplaced(FreeAgentAttachmentMetadata Pre
 
 /// <summary>
 /// The existing attachment already matches what would have been uploaded (compared
-/// against the record's own last-known-good upload). No upload call was made -
-/// this is what makes retries idempotent.
+/// against the record's own last-known-good upload, or against the file this call is about to
+/// upload for this invoice - see issue #133). No upload call was made - this is what makes
+/// retries idempotent even across a lost record history.
 /// </summary>
 public sealed record FreeAgentAttachmentAlreadyCorrect(FreeAgentAttachmentMetadata Existing);
 
