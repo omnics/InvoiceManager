@@ -21,8 +21,18 @@ public sealed record ResyncNoRecordExists;
 /// </summary>
 public sealed record ResyncNotEligible(InvoiceRecordId RecordId, InvoiceWorkflowState State);
 
+/// <summary>
+/// The record is eligible, but resyncing it would supersede a pending administrator decision -
+/// see <see cref="InvoiceRecordResync.RequiresConfirmation"/> - and the caller did not pass
+/// <c>confirmed: true</c>. Checked against the same record instance about to be mutated (not a
+/// caller's earlier, possibly stale read), so a record that changed state between an operator's
+/// page load and this call is judged on what it actually is now, not what it was.
+/// </summary>
+public sealed record ResyncConfirmationRequired(InvoiceRecordId RecordId, InvoiceWorkflowState State);
+
 /// <summary>The outcome of attempting to resync a configuration's most recent invoice record.</summary>
-public union InvoiceRecordResyncResult(ResyncSucceeded, ResyncConfigurationNotFound, ResyncNoRecordExists, ResyncNotEligible);
+public union InvoiceRecordResyncResult(
+    ResyncSucceeded, ResyncConfigurationNotFound, ResyncNoRecordExists, ResyncNotEligible, ResyncConfirmationRequired);
 
 /// <summary>
 /// Recovers a record stuck against a stale <see cref="InvoiceProcessingSnapshot"/> - most
@@ -68,6 +78,7 @@ public sealed class InvoiceRecordResync(
         InvoiceConfigurationId configurationId,
         IntegrationType integrationType,
         InvoiceConfigurationActor actor,
+        bool confirmed,
         CancellationToken cancellationToken = default)
     {
         var configurationResult = await configurationRepository.GetAsync(configurationId, integrationType, cancellationToken);
@@ -80,6 +91,13 @@ public sealed class InvoiceRecordResync(
 
         if (!IsEligible(record.State))
             return new ResyncNotEligible(record.Id, record.State);
+
+        // Checked against `record` (just read above), not a caller's earlier snapshot - closes the
+        // window where a due run could advance the record into FreeAgentInterventionPending between
+        // an operator's page load and this call, and see it superseded without ever having actually
+        // been confirmed against.
+        if (RequiresConfirmation(record.State) && !confirmed)
+            return new ResyncConfirmationRequired(record.Id, record.State);
 
         if (record.State is FreeAgentInterventionPending pending)
         {

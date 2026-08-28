@@ -59,7 +59,7 @@ public sealed class IndexPageTests
         var records = new InMemoryInvoiceRecordRepository(completed, current);
         var overview = new InvoiceSyncOverview(
             new InvoiceConfigurationService(new FakeConfigurationRepository(config)), records);
-        var model = CreateIndexModel(overview: overview, recordRepository: records);
+        var model = CreateIndexModel(overview: overview);
 
         await model.OnGetAsync();
 
@@ -69,18 +69,16 @@ public sealed class IndexPageTests
     }
 
     [Fact]
-    public async Task ResyncRecord_TriggersResync_ForAnEligibleRecordThatNeedsNoConfirmation()
+    public async Task ResyncRecord_PassesConfirmedThroughToTheTrigger_AndSurfacesSucceeded()
     {
-        var config = Configurations.Build(id: new InvoiceConfigurationId("acme"));
-        var records = new InMemoryInvoiceRecordRepository(
-            Records.Build(config, state: new RetrievalError("transient failure")));
-        var resyncTrigger = new FakeInvoiceRecordResyncTrigger();
-        var model = CreateIndexModel(recordRepository: records, resyncTrigger: resyncTrigger);
+        var resyncTrigger = new FakeInvoiceRecordResyncTrigger(
+            new InvoiceRecordResyncTriggerSucceeded(InvoiceRecordId.NewId(new DateOnly(2025, 7, 1), new("acme"))));
+        var model = CreateIndexModel(resyncTrigger: resyncTrigger);
 
-        var result = await model.OnPostResyncRecordAsync("acme", config.IntegrationType, confirmed: false);
+        var result = await model.OnPostResyncRecordAsync("acme", IntegrationType.MicrosoftBilling, confirmed: true);
 
         Assert.IsType<Microsoft.AspNetCore.Mvc.RedirectToPageResult>(result);
-        Assert.True(resyncTrigger.WasTriggered);
+        Assert.True(resyncTrigger.LastConfirmed);
         Assert.Equal(
             "The most recent record was refreshed from the current configuration and reset to Expected; it will " +
             "be retried the next time this configuration is processed (skipped while it is inactive).",
@@ -88,23 +86,20 @@ public sealed class IndexPageTests
     }
 
     [Fact]
-    public async Task ResyncRecord_RequiresConfirmation_ForAFreeAgentInterventionPendingRecord()
+    public async Task ResyncRecord_SurfacesConfirmationRequiredMessage_WhenTheTriggerReportsIt()
     {
-        var config = Configurations.Build(id: new InvoiceConfigurationId("acme"));
-        var records = new InMemoryInvoiceRecordRepository(
-            Records.Build(
-                config,
-                state: new FreeAgentInterventionPending(
-                    Actuals.Build(),
-                    new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item"),
-                    new FreeAgentInterventionId("intervention-1"))));
-        var resyncTrigger = new FakeInvoiceRecordResyncTrigger();
-        var model = CreateIndexModel(recordRepository: records, resyncTrigger: resyncTrigger);
+        // The page no longer pre-reads the record's state to decide whether to require
+        // confirmation - it always passes `confirmed` through and reacts to whatever the
+        // Functions/Core resync operation (the authority on the record's current state) reports,
+        // closing the TOCTOU window a page-level pre-check alone could not.
+        var resyncTrigger = new FakeInvoiceRecordResyncTrigger(
+            new InvoiceRecordResyncTriggerConfirmationRequired(InvoiceRecordId.NewId(new DateOnly(2025, 7, 1), new("acme"))));
+        var model = CreateIndexModel(resyncTrigger: resyncTrigger);
 
-        var result = await model.OnPostResyncRecordAsync("acme", config.IntegrationType, confirmed: false);
+        var result = await model.OnPostResyncRecordAsync("acme", IntegrationType.MicrosoftBilling, confirmed: false);
 
         Assert.IsType<Microsoft.AspNetCore.Mvc.RedirectToPageResult>(result);
-        Assert.False(resyncTrigger.WasTriggered);
+        Assert.False(resyncTrigger.LastConfirmed);
         Assert.Equal(
             "This resync would supersede a pending Guess-removal intervention without a decision being " +
             "recorded. Confirm before continuing.",
@@ -112,35 +107,13 @@ public sealed class IndexPageTests
     }
 
     [Fact]
-    public async Task ResyncRecord_TriggersResync_ForAFreeAgentInterventionPendingRecord_OnceConfirmed()
-    {
-        var config = Configurations.Build(id: new InvoiceConfigurationId("acme"));
-        var records = new InMemoryInvoiceRecordRepository(
-            Records.Build(
-                config,
-                state: new FreeAgentInterventionPending(
-                    Actuals.Build(),
-                    new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item"),
-                    new FreeAgentInterventionId("intervention-1"))));
-        var resyncTrigger = new FakeInvoiceRecordResyncTrigger();
-        var model = CreateIndexModel(recordRepository: records, resyncTrigger: resyncTrigger);
-
-        await model.OnPostResyncRecordAsync("acme", config.IntegrationType, confirmed: true);
-
-        Assert.True(resyncTrigger.WasTriggered);
-    }
-
-    [Fact]
     public async Task ResyncRecord_ReportsMissingAuthorization_WhenNoWorkflowAuthorizationIsCaptured()
     {
-        var config = Configurations.Build(id: new InvoiceConfigurationId("acme"));
-        var records = new InMemoryInvoiceRecordRepository(
-            Records.Build(config, state: new RetrievalError("transient failure")));
-        var resyncTrigger = new FakeInvoiceRecordResyncTrigger();
-        var model = CreateIndexModel(
-            recordRepository: records, resyncTrigger: resyncTrigger, hasWorkflowAuthorization: false);
+        var resyncTrigger = new FakeInvoiceRecordResyncTrigger(
+            new InvoiceRecordResyncTriggerSucceeded(InvoiceRecordId.NewId(new DateOnly(2025, 7, 1), new("acme"))));
+        var model = CreateIndexModel(resyncTrigger: resyncTrigger, hasWorkflowAuthorization: false);
 
-        await model.OnPostResyncRecordAsync("acme", config.IntegrationType, confirmed: false);
+        await model.OnPostResyncRecordAsync("acme", IntegrationType.MicrosoftBilling, confirmed: false);
 
         Assert.False(resyncTrigger.WasTriggered);
         Assert.Equal(
@@ -151,16 +124,14 @@ public sealed class IndexPageTests
     private static IndexModel CreateIndexModel(
         IExpectedRecordGenerationTrigger? generationTrigger = null,
         InvoiceSyncOverview? overview = null,
-        InvoiceManager.Core.Repositories.IInvoiceRecordRepository? recordRepository = null,
         IInvoiceRecordResyncTrigger? resyncTrigger = null,
         bool hasWorkflowAuthorization = true)
     {
-        var records = recordRepository ?? new InMemoryInvoiceRecordRepository();
+        var records = new InMemoryInvoiceRecordRepository();
         var model = new IndexModel(
             generationTrigger ?? new FakeExpectedRecordGenerationTrigger(new ExpectedRecordGenerationTriggered(207)),
             overview ?? new InvoiceSyncOverview(new InvoiceConfigurationService(new FakeConfigurationRepository()), records),
             new FakeMicrosoftAuthorizationStore(hasWorkflowAuthorization),
-            records,
             resyncTrigger ?? new FakeInvoiceRecordResyncTrigger());
 
         var httpContext = new DefaultHttpContext
@@ -192,19 +163,23 @@ public sealed class IndexPageTests
         }
     }
 
-    private sealed class FakeInvoiceRecordResyncTrigger : IInvoiceRecordResyncTrigger
+    private sealed class FakeInvoiceRecordResyncTrigger(InvoiceRecordResyncTriggerResult? result = null)
+        : IInvoiceRecordResyncTrigger
     {
         public bool WasTriggered { get; private set; }
+        public bool LastConfirmed { get; private set; }
 
         public Task<InvoiceRecordResyncTriggerResult> TriggerAsync(
             InvoiceConfigurationId configurationId,
             IntegrationType integrationType,
             InvoiceConfigurationActor actor,
+            bool confirmed,
             CancellationToken cancellationToken)
         {
             WasTriggered = true;
-            return Task.FromResult<InvoiceRecordResyncTriggerResult>(
-                new InvoiceRecordResyncTriggerSucceeded(InvoiceRecordId.NewId(new DateOnly(2025, 7, 1), configurationId)));
+            LastConfirmed = confirmed;
+            return Task.FromResult(
+                result ?? new InvoiceRecordResyncTriggerSucceeded(InvoiceRecordId.NewId(new DateOnly(2025, 7, 1), configurationId)));
         }
     }
 

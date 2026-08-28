@@ -1,6 +1,5 @@
 using InvoiceManager.AdminWeb.Services;
 using InvoiceManager.Core;
-using InvoiceManager.Core.Repositories;
 using InvoiceManager.Infrastructure.MicrosoftAuthorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -11,7 +10,6 @@ public class IndexModel(
     IExpectedRecordGenerationTrigger expectedRecordGenerationTrigger,
     InvoiceSyncOverview overview,
     IMicrosoftAuthorizationStore authorizationStore,
-    IInvoiceRecordRepository recordRepository,
     IInvoiceRecordResyncTrigger resyncTrigger) : PageModel
 {
     public IReadOnlyList<InvoiceSyncRow> Rows { get; private set; } = [];
@@ -47,18 +45,8 @@ public class IndexModel(
             return RedirectToPage();
         }
 
-        var configurationId = new InvoiceConfigurationId(id);
-        if (await recordRepository.GetMostRecentAsync(configurationId, HttpContext.RequestAborted) is InvoiceRecord current &&
-            InvoiceRecordResync.RequiresConfirmation(current.State) && !confirmed)
-        {
-            TempData["StatusMessage"] =
-                "This resync would supersede a pending Guess-removal intervention without a decision being " +
-                "recorded. Confirm before continuing.";
-            return RedirectToPage();
-        }
-
         var result = await resyncTrigger.TriggerAsync(
-            configurationId, integrationType, User.ToConfigurationActor(), HttpContext.RequestAborted);
+            new(id), integrationType, User.ToConfigurationActor(), confirmed, HttpContext.RequestAborted);
         TempData["StatusMessage"] = result switch
         {
             InvoiceRecordResyncTriggerSucceeded =>
@@ -68,6 +56,9 @@ public class IndexModel(
                 "This configuration has no record yet, so there is nothing to resync.",
             InvoiceRecordResyncTriggerNotEligible =>
                 "The most recent record has already progressed past matching, so it was not resynced.",
+            InvoiceRecordResyncTriggerConfirmationRequired =>
+                "This resync would supersede a pending Guess-removal intervention without a decision being " +
+                "recorded. Confirm before continuing.",
             InvoiceRecordResyncTriggerConfigurationNotFound => "Configuration not found.",
             InvoiceRecordResyncNotConfigured =>
                 "The Functions app URL is not configured, so the resync could not be triggered.",

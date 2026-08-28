@@ -33,7 +33,8 @@ public sealed class InvoiceRecordResyncTests
             new FixedTimeProvider(Now),
             NullLogger<InvoiceRecordResync>.Instance);
 
-        var result = await resync.ResyncMostRecentAsync(originalConfig.Id, originalConfig.IntegrationType, Actor);
+        // These states don't require confirmation, so this should succeed regardless of it.
+        var result = await resync.ResyncMostRecentAsync(originalConfig.Id, originalConfig.IntegrationType, Actor, confirmed: false);
 
         Assert.True(result is ResyncSucceeded succeeded && succeeded.RecordId == record.Id);
         var stored = Assert.Single(records.All);
@@ -42,7 +43,7 @@ public sealed class InvoiceRecordResyncTests
     }
 
     [Fact]
-    public async Task ResyncMostRecentAsync_SupersedesThePendingIntervention_ForFreeAgentInterventionPending()
+    public async Task ResyncMostRecentAsync_ReturnsConfirmationRequired_ForFreeAgentInterventionPending_WhenNotConfirmed()
     {
         var config = Configurations.Build();
         var interventionId = new FreeAgentInterventionId("intervention-1");
@@ -57,7 +58,32 @@ public sealed class InvoiceRecordResyncTests
             new FixedTimeProvider(Now),
             NullLogger<InvoiceRecordResync>.Instance);
 
-        var result = await resync.ResyncMostRecentAsync(config.Id, config.IntegrationType, Actor);
+        // Checked against the record just re-read from the repository, not any earlier caller
+        // snapshot - this is what closes the TOCTOU window a page-level pre-check alone could not.
+        var result = await resync.ResyncMostRecentAsync(config.Id, config.IntegrationType, Actor, confirmed: false);
+
+        Assert.True(result is ResyncConfirmationRequired confirmationRequired && confirmationRequired.RecordId == record.Id);
+        Assert.Equal(FreeAgentGuessInterventionStatus.Pending, Assert.Single(interventions.Created).Status);
+        Assert.True(Assert.Single(records.All).State is FreeAgentInterventionPending);
+    }
+
+    [Fact]
+    public async Task ResyncMostRecentAsync_SupersedesThePendingIntervention_ForFreeAgentInterventionPending_WhenConfirmed()
+    {
+        var config = Configurations.Build();
+        var interventionId = new FreeAgentInterventionId("intervention-1");
+        var record = Records.Build(config, state: BuildInterventionPendingState(interventionId));
+        var records = new InMemoryInvoiceRecordRepository(record);
+        var interventions = new InMemoryFreeAgentInterventionRepository();
+        await interventions.CreateAsync(BuildIntervention(interventionId, record.Id));
+        var resync = new InvoiceRecordResync(
+            records,
+            new FakeConfigurationRepository(config),
+            interventions,
+            new FixedTimeProvider(Now),
+            NullLogger<InvoiceRecordResync>.Instance);
+
+        var result = await resync.ResyncMostRecentAsync(config.Id, config.IntegrationType, Actor, confirmed: true);
 
         Assert.True(result is ResyncSucceeded);
         var intervention = Assert.Single(interventions.Created);
@@ -82,7 +108,7 @@ public sealed class InvoiceRecordResyncTests
             new FixedTimeProvider(Now),
             NullLogger<InvoiceRecordResync>.Instance);
 
-        var result = await resync.ResyncMostRecentAsync(config.Id, config.IntegrationType, Actor);
+        var result = await resync.ResyncMostRecentAsync(config.Id, config.IntegrationType, Actor, confirmed: false);
 
         Assert.True(result is ResyncNotEligible notEligible && notEligible.RecordId == record.Id);
         Assert.Equal(record.State, Assert.Single(records.All).State);
@@ -100,7 +126,7 @@ public sealed class InvoiceRecordResyncTests
             new FixedTimeProvider(Now),
             NullLogger<InvoiceRecordResync>.Instance);
 
-        var result = await resync.ResyncMostRecentAsync(config.Id, config.IntegrationType, Actor);
+        var result = await resync.ResyncMostRecentAsync(config.Id, config.IntegrationType, Actor, confirmed: false);
 
         Assert.True(result is ResyncNoRecordExists);
     }
@@ -117,7 +143,7 @@ public sealed class InvoiceRecordResyncTests
             NullLogger<InvoiceRecordResync>.Instance);
 
         var result = await resync.ResyncMostRecentAsync(
-            new InvoiceConfigurationId("missing"), IntegrationType.MicrosoftBilling, Actor);
+            new InvoiceConfigurationId("missing"), IntegrationType.MicrosoftBilling, Actor, confirmed: false);
 
         Assert.True(result is ResyncConfigurationNotFound);
     }
