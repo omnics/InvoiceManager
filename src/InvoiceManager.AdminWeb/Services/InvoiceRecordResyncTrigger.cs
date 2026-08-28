@@ -14,7 +14,10 @@ namespace InvoiceManager.AdminWeb.Services;
 public interface IInvoiceRecordResyncTrigger
 {
     Task<InvoiceRecordResyncTriggerResult> TriggerAsync(
-        InvoiceConfigurationId configurationId, IntegrationType integrationType, CancellationToken cancellationToken);
+        InvoiceConfigurationId configurationId,
+        IntegrationType integrationType,
+        InvoiceConfigurationActor actor,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>The resync refreshed the record's snapshot and reset it to Expected.</summary>
@@ -64,7 +67,10 @@ public sealed class FunctionsInvoiceRecordResyncTrigger(
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
     public async Task<InvoiceRecordResyncTriggerResult> TriggerAsync(
-        InvoiceConfigurationId configurationId, IntegrationType integrationType, CancellationToken cancellationToken)
+        InvoiceConfigurationId configurationId,
+        IntegrationType integrationType,
+        InvoiceConfigurationActor actor,
+        CancellationToken cancellationToken)
     {
         var functionsBaseUrl = configuration.GetValue<Uri?>("Functions:BaseUrl");
         if (functionsBaseUrl is null)
@@ -74,7 +80,8 @@ public sealed class FunctionsInvoiceRecordResyncTrigger(
 
         var triggerUri = new Uri(
             functionsBaseUrl,
-            $"{TriggerPath}?configurationId={Uri.EscapeDataString(configurationId.Value)}&integrationType={integrationType}");
+            $"{TriggerPath}?configurationId={Uri.EscapeDataString(configurationId.Value)}&integrationType={integrationType}" +
+            $"&actorObjectId={Uri.EscapeDataString(actor.ObjectId)}&actorDisplayName={Uri.EscapeDataString(actor.DisplayName)}");
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Post, triggerUri);

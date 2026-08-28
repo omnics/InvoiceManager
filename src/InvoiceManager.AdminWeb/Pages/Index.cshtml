@@ -1,5 +1,6 @@
 @page
 @model IndexModel
+@using InvoiceManager.Core
 @{
     ViewData["Title"] = "Home";
 }
@@ -9,20 +10,103 @@
         <p class="eyebrow">InvoiceManager Admin</p>
         <h1>Home</h1>
         <p class="summary">
-            Dashboard coming soon.
+            Invoice syncing status across every configuration, most recent invoice date first.
         </p>
-    </div>
-
-    <div class="notice">
-        <p>Processing status for current invoices will appear here.</p>
     </div>
 
     @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
     {
         <div class="notice">@Model.StatusMessage</div>
     }
+    @if (!Model.HasWorkflowAuthorization)
+    {
+        <div class="notice warning">Microsoft authorization is not captured. You may view invoice sync status, but resyncing a stuck record is disabled.</div>
+    }
 
     <section class="status-panel">
+        <h2>Invoice records</h2>
+        <p class="status-label">
+            Each configuration's current record, plus the last one that completed if the current one hasn't yet.
+            Sorted by invoice date (actual once known, otherwise expected) descending.
+        </p>
+        @if (Model.Rows.Count == 0)
+        {
+            <p class="status-label">No invoice records have been generated yet.</p>
+        }
+        else
+        {
+            <div class="table-scroll">
+                <div class="invoice-sync-grid" role="table" aria-label="Invoice records">
+                    <div role="rowgroup" style="display:contents">
+                        <div role="row" style="display:contents">
+                            <div role="columnheader"></div>
+                            <div role="columnheader">Configuration</div>
+                            <div role="columnheader">Date</div>
+                            <div role="columnheader">Status</div>
+                            <div role="columnheader">Diagnostic</div>
+                            <div role="columnheader"></div>
+                        </div>
+                    </div>
+                    <div role="rowgroup" style="display:contents">
+                        @foreach (var row in Model.Rows)
+                        {
+                            var rowClass = $"invoice-sync-row {BucketClass(row.Bucket)}{(row.IsActive ? "" : " is-inactive")}";
+                            <div role="row" class="@rowClass" style="display:contents">
+                                <div role="cell" class="stripe-cell"></div>
+                                <div role="cell" class="config-cell">
+                                    <span class="config-name">@(string.IsNullOrWhiteSpace(row.InvoiceDescription) ? row.ConfigurationId.Value : row.InvoiceDescription)</span>
+                                    <span class="config-sub">@(row.IsActive ? "" : "Inactive · ")@(row.IntegrationType == IntegrationType.MicrosoftBilling ? "Microsoft billing" : "Microsoft 365 email")</span>
+                                </div>
+                                <div role="cell" class="date-cell">
+                                    @row.Date.ToString("d MMM yyyy")
+                                    @if (!row.IsActualDate)
+                                    {
+                                        <span class="date-sub">expected</span>
+                                    }
+                                </div>
+                                <div role="cell">
+                                    <span class="sync-pill @BucketPillClass(row.Bucket)" title="@row.State.GetType().Name">@BucketLabel(row.Bucket)</span>
+                                </div>
+                                <div role="cell" class="diagnostic@(row.Bucket == InvoiceSyncBucket.NeedsAttention ? " is-error" : "")">
+                                    @(row.Diagnostic is string diagnostic ? diagnostic : "—")
+                                </div>
+                                <div role="cell">
+                                    @if (row.CanResync && Model.HasWorkflowAuthorization)
+                                    {
+                                        if (row.ResyncRequiresConfirmation)
+                                        {
+                                            <details class="resync-details">
+                                                <summary class="secondary-action">Resync</summary>
+                                                <div class="confirm-callout">
+                                                    This will supersede the pending Guess-removal intervention without a decision being recorded.
+                                                    <form method="post">
+                                                        <input type="hidden" name="id" value="@row.ConfigurationId.Value" />
+                                                        <input type="hidden" name="integrationType" value="@row.IntegrationType" />
+                                                        <label><input type="checkbox" name="confirmed" value="true" /> Confirm</label>
+                                                        <button asp-page-handler="ResyncRecord" class="secondary-action">Resync anyway</button>
+                                                    </form>
+                                                </div>
+                                            </details>
+                                        }
+                                        else
+                                        {
+                                            <form method="post">
+                                                <input type="hidden" name="id" value="@row.ConfigurationId.Value" />
+                                                <input type="hidden" name="integrationType" value="@row.IntegrationType" />
+                                                <button asp-page-handler="ResyncRecord" class="secondary-action">Resync</button>
+                                            </form>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </section>
+
+    <section class="status-panel" style="margin-top:24px;">
         <h2>Invoice workflow</h2>
         <p class="status-label">
             Manually run expected record generation and due-invoice processing in the Functions app.
@@ -34,3 +118,29 @@
         </form>
     </section>
 </section>
+
+@functions {
+    private static string BucketClass(InvoiceSyncBucket bucket) => bucket switch
+    {
+        InvoiceSyncBucket.Complete => "bucket-complete",
+        InvoiceSyncBucket.NeedsAttention => "bucket-needs-attention",
+        InvoiceSyncBucket.InProgress => "bucket-in-progress",
+        _ => "",
+    };
+
+    private static string BucketPillClass(InvoiceSyncBucket bucket) => bucket switch
+    {
+        InvoiceSyncBucket.Complete => "sync-pill-complete",
+        InvoiceSyncBucket.NeedsAttention => "sync-pill-needs-attention",
+        InvoiceSyncBucket.InProgress => "sync-pill-in-progress",
+        _ => "",
+    };
+
+    private static string BucketLabel(InvoiceSyncBucket bucket) => bucket switch
+    {
+        InvoiceSyncBucket.Complete => "Complete",
+        InvoiceSyncBucket.NeedsAttention => "Needs attention",
+        InvoiceSyncBucket.InProgress => "In progress",
+        _ => "",
+    };
+}

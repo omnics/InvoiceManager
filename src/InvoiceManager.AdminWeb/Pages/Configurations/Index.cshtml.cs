@@ -57,7 +57,8 @@ public sealed class IndexModel(
 
     public async Task<IActionResult> OnPostResyncStuckRecordAsync(string id, IntegrationType integrationType)
     {
-        var result = await resyncTrigger.TriggerAsync(new(id), integrationType, HttpContext.RequestAborted);
+        var result = await resyncTrigger.TriggerAsync(
+            new(id), integrationType, User.ToConfigurationActor(), HttpContext.RequestAborted);
         TempData["StatusMessage"] = result switch
         {
             InvoiceRecordResyncTriggerSucceeded =>

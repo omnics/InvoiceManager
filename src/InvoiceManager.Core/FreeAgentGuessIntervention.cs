@@ -26,6 +26,13 @@ public enum FreeAgentGuessInterventionStatus
     Approved,
     Declined,
     Expired,
+
+    /// <summary>
+    /// An administrator resynced the intervention's record before ever recording a decision on
+    /// it - see <see cref="InvoiceRecordResync"/>. Distinct from <see cref="Declined"/>, which
+    /// means an administrator reviewed the Guess-removal proposal itself and rejected it.
+    /// </summary>
+    Superseded,
 }
 
 /// <summary>

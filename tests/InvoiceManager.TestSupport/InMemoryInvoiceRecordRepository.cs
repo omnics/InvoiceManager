@@ -31,6 +31,20 @@ public class InMemoryInvoiceRecordRepository : IInvoiceRecordRepository
         return Task.FromResult(result);
     }
 
+    public virtual Task<Option<InvoiceRecord>> GetMostRecentCompletedAsync(
+        InvoiceConfigurationId configurationId,
+        CancellationToken cancellationToken = default)
+    {
+        var record = store
+            .Where(r => r.ConfigurationId == configurationId
+                && r.State is SavedToOneDrive or ReconciledFromOneDrive or FreeAgentAttached)
+            .OrderByDescending(r => r.ExpectedDate)
+            .FirstOrDefault();
+
+        Option<InvoiceRecord> result = record is not null ? record : Option.None;
+        return Task.FromResult(result);
+    }
+
     public Task CreateIfNotExistsAsync(InvoiceRecord record, CancellationToken cancellationToken = default)
     {
         if (!store.Any(r => r.Id == record.Id))

@@ -60,7 +60,10 @@ public sealed class IndexModelExportTests
     private sealed class FakeInvoiceRecordResyncTrigger : IInvoiceRecordResyncTrigger
     {
         public Task<InvoiceRecordResyncTriggerResult> TriggerAsync(
-            InvoiceConfigurationId configurationId, IntegrationType integrationType, CancellationToken cancellationToken) =>
+            InvoiceConfigurationId configurationId,
+            IntegrationType integrationType,
+            InvoiceConfigurationActor actor,
+            CancellationToken cancellationToken) =>
             Task.FromResult<InvoiceRecordResyncTriggerResult>(
                 new InvoiceRecordResyncTriggerSucceeded(new InvoiceRecordId("test-record")));
     }

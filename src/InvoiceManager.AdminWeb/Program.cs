@@ -124,6 +124,7 @@ builder.Services.AddSingleton<IInvoiceRecordRepository>(sp =>
         builder.Configuration["CosmosDatabase"] ?? "invoicemanager",
         sp.GetRequiredService<ILogger<CosmosInvoiceRecordRepository>>()));
 builder.Services.AddSingleton<InvoiceConfigurationService>();
+builder.Services.AddSingleton<InvoiceSyncOverview>();
 builder.Services.AddSingleton<IMicrosoftTokenProvider, MicrosoftTokenProvider>();
 builder.Services.AddOptions<MicrosoftResourceDiscoveryOptions>()
     .Bind(builder.Configuration.GetSection(MicrosoftResourceDiscoveryOptions.SectionName));
