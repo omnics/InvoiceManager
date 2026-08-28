@@ -92,8 +92,12 @@
                     </form>
                     <form method="post">
                         <input type="hidden" name="id" value="@configuration.Id.Value" /><input type="hidden" name="integrationType" value="@configuration.IntegrationType" />
+                        @* "confirmed" is only actually required when the most recent record is FreeAgentInterventionPending
+                           (see InvoiceRecordResync.RequiresConfirmation) - harmless to tick for any other state, but always
+                           shown here since this page doesn't otherwise know a row's record state without an extra lookup. *@
+                        <label class="import-confirmation"><input type="checkbox" name="confirmed" value="true" /> Confirm</label>
                         <button asp-page-handler="ResyncStuckRecord" class="secondary-action"
-                            title="Refreshes this configuration's most recent record from the current search criteria and retries it the next time this (active) configuration is processed. Use after editing the configuration to fix a record stuck as Expected, RetrievalError, or NotFound.">
+                            title="Refreshes this configuration's most recent record from the current search criteria and retries it the next time this (active) configuration is processed. Use after editing the configuration to fix a record stuck as Expected, RetrievalError, or NotFound. If the record is awaiting a Guess-removal intervention decision, this supersedes it - tick Confirm first.">
                             Resync stuck record
                         </button>
                     </form>

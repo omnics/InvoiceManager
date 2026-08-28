@@ -51,6 +51,7 @@ public sealed class IndexModelExportTests
             new InvoiceConfigurationService(repository),
             new FakeMicrosoftAuthorizationStore(hasTokenCache: true),
             new FakeMicrosoftResourceDiscovery(),
+            new InMemoryInvoiceRecordRepository(),
             new FakeInvoiceRecordResyncTrigger())
         {
             PageContext = new PageContext { HttpContext = httpContext },

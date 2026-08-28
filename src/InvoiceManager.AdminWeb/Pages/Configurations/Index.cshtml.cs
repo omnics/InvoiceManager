@@ -1,6 +1,7 @@
 using System.Text.Json;
 using InvoiceManager.AdminWeb.Services;
 using InvoiceManager.Core;
+using InvoiceManager.Core.Repositories;
 using InvoiceManager.Infrastructure.MicrosoftAuthorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -11,6 +12,7 @@ public sealed class IndexModel(
     InvoiceConfigurationService service,
     IMicrosoftAuthorizationStore authorizationStore,
     IMicrosoftResourceDiscovery discovery,
+    IInvoiceRecordRepository recordRepository,
     IInvoiceRecordResyncTrigger resyncTrigger) : PageModel
 {
     public IReadOnlyList<StoredInvoiceConfiguration> Configurations { get; private set; } = [];
@@ -55,10 +57,21 @@ public sealed class IndexModel(
         return RedirectToPage();
     }
 
-    public async Task<IActionResult> OnPostResyncStuckRecordAsync(string id, IntegrationType integrationType)
+    public async Task<IActionResult> OnPostResyncStuckRecordAsync(
+        string id, IntegrationType integrationType, bool confirmed)
     {
+        var configurationId = new InvoiceConfigurationId(id);
+        if (await recordRepository.GetMostRecentAsync(configurationId, HttpContext.RequestAborted) is InvoiceRecord current &&
+            InvoiceRecordResync.RequiresConfirmation(current.State) && !confirmed)
+        {
+            TempData["StatusMessage"] =
+                "This resync would supersede a pending Guess-removal intervention without a decision being " +
+                "recorded. Confirm before continuing.";
+            return RedirectToPage();
+        }
+
         var result = await resyncTrigger.TriggerAsync(
-            new(id), integrationType, User.ToConfigurationActor(), HttpContext.RequestAborted);
+            configurationId, integrationType, User.ToConfigurationActor(), HttpContext.RequestAborted);
         TempData["StatusMessage"] = result switch
         {
             InvoiceRecordResyncTriggerSucceeded =>
