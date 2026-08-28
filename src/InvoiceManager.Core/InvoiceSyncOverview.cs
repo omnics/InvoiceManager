@@ -39,8 +39,8 @@ public sealed record InvoiceSyncRow(
     DateOnly ExpectedDate,
     InvoiceWorkflowState State)
 {
-    public DateOnly Date => InvoiceSyncOverview.ActualDate(State) ?? ExpectedDate;
-    public bool IsActualDate => InvoiceSyncOverview.ActualDate(State) is not null;
+    public DateOnly Date => InvoiceSyncOverview.ActualDate(State) is DateOnly actual ? actual : ExpectedDate;
+    public bool IsActualDate => InvoiceSyncOverview.ActualDate(State) is DateOnly;
     public InvoiceSyncBucket Bucket => InvoiceSyncOverview.Bucket(State);
     public Option<string> Diagnostic => InvoiceSyncOverview.Diagnostic(State);
     public bool CanResync => InvoiceRecordResync.IsEligible(State);
@@ -90,11 +90,11 @@ public sealed class InvoiceSyncOverview(
             record.ExpectedDate,
             record.State);
 
-    internal static DateOnly? ActualDate(InvoiceWorkflowState state) => state switch
+    internal static Option<DateOnly> ActualDate(InvoiceWorkflowState state) => state switch
     {
-        Expected => null,
-        NotFound => null,
-        RetrievalError => null,
+        Expected => Option.None,
+        NotFound => Option.None,
+        RetrievalError => Option.None,
         Retrieved retrieved => retrieved.ActualDetails.ActualInvoiceDate,
         ReconciledFromOneDrive reconciled => reconciled.ActualDetails.ActualInvoiceDate,
         SavedToOneDrive saved => saved.ActualDetails.ActualInvoiceDate,
