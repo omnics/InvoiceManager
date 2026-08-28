@@ -30,7 +30,14 @@ var configuration = new ConfigurationBuilder()
 //   --force              override the production --clear-database/--clear-records-only guard.
 //   --environment <n>    deployment environment (required). When "test", downloads are nested
 //                        under a root "Test" folder so they never collide with production files.
-var (ensureSchema, clearDatabase, clearRecordsOnly, force, environment, positionalArgs) = ParseArgs(args);
+//   --help               print usage and examples, then exit without performing any action.
+var (help, ensureSchema, clearDatabase, clearRecordsOnly, force, environment, positionalArgs) = ParseArgs(args);
+
+if (help)
+{
+    PrintUsage();
+    return;
+}
 
 if (string.IsNullOrWhiteSpace(environment))
 {
@@ -317,9 +324,10 @@ static IntegrationConfiguration ToIntegrationConfiguration(SeedInvoiceConfigurat
 static OneDriveFolder ToOneDriveFolder(SeedOneDriveFolder folder, bool isTest) =>
     new(folder.DriveId, folder.DriveName, folder.FolderItemId, isTest ? $"/Test{folder.FolderPath}" : folder.FolderPath);
 
-static (bool EnsureSchema, bool ClearDatabase, bool ClearRecordsOnly, bool Force, string? Environment, string[] Positional)
+static (bool Help, bool EnsureSchema, bool ClearDatabase, bool ClearRecordsOnly, bool Force, string? Environment, string[] Positional)
     ParseArgs(string[] args)
 {
+    var help = false;
     var ensureSchema = false;
     var clearDatabase = false;
     var clearRecordsOnly = false;
@@ -330,7 +338,11 @@ static (bool EnsureSchema, bool ClearDatabase, bool ClearRecordsOnly, bool Force
     for (var i = 0; i < args.Length; i++)
     {
         var arg = args[i];
-        if (arg.Equals("--ensure-schema", StringComparison.OrdinalIgnoreCase))
+        if (arg.Equals("--help", StringComparison.OrdinalIgnoreCase))
+        {
+            help = true;
+        }
+        else if (arg.Equals("--ensure-schema", StringComparison.OrdinalIgnoreCase))
         {
             ensureSchema = true;
         }
@@ -377,5 +389,59 @@ static (bool EnsureSchema, bool ClearDatabase, bool ClearRecordsOnly, bool Force
         }
     }
 
-    return (ensureSchema, clearDatabase, clearRecordsOnly, force, environment, positional.ToArray());
+    return (help, ensureSchema, clearDatabase, clearRecordsOnly, force, environment, positional.ToArray());
+}
+
+static void PrintUsage()
+{
+    Console.WriteLine(
+        """
+        InvoiceManager.Seeder - seeds invoice configurations into Cosmos DB, and can clear
+        run-state or all containers for a repeatable local/Test reset.
+
+        Usage:
+          dotnet run --project tools/InvoiceManager.Seeder -- --environment <name> [options] [seed-file-path]
+
+        Options:
+          --environment <name>  Deployment environment (required). "test" nests OneDrive
+                                 downloads under a root "Test" folder so they never collide
+                                 with production files.
+          --ensure-schema       Create the database and containers before seeding, if they
+                                 don't already exist. Needed against a fresh Cosmos emulator;
+                                 not needed in the cloud, where Terraform owns schema.
+          --clear-database      Delete every item from every container (invoice-configurations,
+                                 invoice-records, freeagent-interventions) before seeding.
+                                 Refused against production unless --force is also passed.
+                                 Mutually exclusive with --clear-records-only.
+          --clear-records-only  Delete every item from invoice-records and
+                                 freeagent-interventions only, then exit without touching
+                                 invoice-configurations or loading a seed file. For winding a
+                                 Test environment's run history back to empty between manual
+                                 test cycles without disturbing hand-edited configurations.
+                                 Refused against production unless --force is also passed.
+                                 Mutually exclusive with --clear-database.
+          --force               Override the production guard on --clear-database and
+                                 --clear-records-only.
+          --help                Show this usage information and exit without doing anything.
+
+          seed-file-path        Optional positional path to a seed JSON file. Defaults to
+                                 data/seed/invoice-configurations.json. Ignored with
+                                 --clear-records-only.
+
+        Examples:
+          Seed a fresh local Cosmos emulator:
+            dotnet run --project tools/InvoiceManager.Seeder -- --environment test --ensure-schema --clear-database
+
+          Reseed Test from the default seed file, wiping existing data first:
+            dotnet run --project tools/InvoiceManager.Seeder -- --environment test --clear-database
+
+          Reset Test's run history only, keeping hand-edited configurations:
+            dotnet run --project tools/InvoiceManager.Seeder -- --environment test --clear-records-only
+
+          Seed production from a specific file (schema already exists, no clearing):
+            dotnet run --project tools/InvoiceManager.Seeder -- --environment production path/to/configurations.json
+
+          Show this help:
+            dotnet run --project tools/InvoiceManager.Seeder -- --help
+        """);
 }

@@ -274,7 +274,8 @@ The seeder **requires** `--environment <env>` so it can make the data
 environment-aware (it exits non-zero when the flag is absent), and optionally
 `--clear-database`. Locally the Aspire AppHost seeds the emulator with
 `--environment test`, so OneDrive destinations are nested under the root `Test`
-folder described below.
+folder described below. Run the seeder with `--help` for the full option list,
+including examples, without performing any action.
 
 Seed values include `InvoiceManager__Seed__DriveId`,
 `InvoiceManager__Seed__DriveName`, `InvoiceManager__Seed__Microsoft365FolderItemId`,
