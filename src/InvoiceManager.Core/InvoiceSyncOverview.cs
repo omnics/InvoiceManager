@@ -45,6 +45,14 @@ public sealed record InvoiceSyncRow(
     public Option<string> Diagnostic => InvoiceSyncOverview.Diagnostic(State);
     public bool CanResync => InvoiceRecordResync.IsEligible(State);
     public bool ResyncRequiresConfirmation => InvoiceRecordResync.RequiresConfirmation(State);
+
+    /// <summary>
+    /// The exact underlying state name (e.g. "RetrievalError"), for display alongside the
+    /// coarser <see cref="Bucket"/> - <c>State.GetType().Name</c> would instead return the
+    /// generated union wrapper's own type name ("InvoiceWorkflowState") for every row, not the
+    /// case it currently holds.
+    /// </summary>
+    public string StateName => InvoiceSyncOverview.StateName(State);
 }
 
 /// <summary>
@@ -104,6 +112,22 @@ public sealed class InvoiceSyncOverview(
         FreeAgentAttached attached => attached.ActualDetails.ActualInvoiceDate,
         FreeAgentInterventionPending pending => pending.ActualDetails.ActualInvoiceDate,
         FreeAgentError freeAgentError => freeAgentError.ActualDetails.ActualInvoiceDate,
+    };
+
+    internal static string StateName(InvoiceWorkflowState state) => state switch
+    {
+        Expected => nameof(Expected),
+        NotFound => nameof(NotFound),
+        RetrievalError => nameof(RetrievalError),
+        Retrieved => nameof(Retrieved),
+        ReconciledFromOneDrive => nameof(ReconciledFromOneDrive),
+        SavedToOneDrive => nameof(SavedToOneDrive),
+        FreeAgentMatchExpected => nameof(FreeAgentMatchExpected),
+        FreeAgentBillMatched => nameof(FreeAgentBillMatched),
+        FreeAgentBillReconciled => nameof(FreeAgentBillReconciled),
+        FreeAgentAttached => nameof(FreeAgentAttached),
+        FreeAgentInterventionPending => nameof(FreeAgentInterventionPending),
+        FreeAgentError => nameof(FreeAgentError),
     };
 
     public static InvoiceSyncBucket Bucket(InvoiceWorkflowState state) => state switch

@@ -123,4 +123,31 @@ public sealed class InvoiceSyncOverviewTests
 
         Assert.Equal(expectedBucket, InvoiceSyncOverview.Bucket(state));
     }
+
+    [Theory]
+    [InlineData(typeof(RetrievalError), "RetrievalError")]
+    [InlineData(typeof(FreeAgentInterventionPending), "FreeAgentInterventionPending")]
+    public async Task GetRowsAsync_ReportsTheExactUnderlyingStateName_NotTheUnionWrapperTypeName(
+        Type stateType, string expectedStateName)
+    {
+        // InvoiceWorkflowState is a generated union wrapper struct - State.GetType().Name would
+        // return "InvoiceWorkflowState" for every row regardless of which case it holds, so
+        // StateName must come from an explicit switch instead of reflection over State itself.
+        var oneDrive = new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item");
+        InvoiceWorkflowState state = stateType.Name switch
+        {
+            nameof(RetrievalError) => new RetrievalError("transient failure"),
+            nameof(FreeAgentInterventionPending) => new FreeAgentInterventionPending(
+                Actuals.Build(), oneDrive, new FreeAgentInterventionId("intervention-1")),
+            _ => throw new ArgumentOutOfRangeException(nameof(stateType), stateType, "Unhandled state type in test."),
+        };
+        var config = Configurations.Build(id: new InvoiceConfigurationId("acme"));
+        var records = new InMemoryInvoiceRecordRepository(Records.Build(config, state: state));
+        var overview = new InvoiceSyncOverview(
+            new InvoiceConfigurationService(new FakeConfigurationRepository(config)), records);
+
+        var rows = await overview.GetRowsAsync();
+
+        Assert.Equal(expectedStateName, Assert.Single(rows).StateName);
+    }
 }
