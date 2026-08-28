@@ -26,19 +26,23 @@ public enum InvoiceSyncBucket
 /// <summary>
 /// One row of the AdminWeb home dashboard: a single <see cref="InvoiceRecord"/> alongside the
 /// configuration context needed to render it, sorted (by the caller) on <see cref="Date"/>
-/// descending across every configuration.
+/// descending across every configuration. <see cref="Date"/>, <see cref="IsActualDate"/>,
+/// <see cref="Bucket"/>, and <see cref="Diagnostic"/> are all derived from <see cref="State"/>
+/// (and <see cref="ExpectedDate"/>) rather than supplied independently, so a row combining a
+/// state with a contradictory bucket/diagnostic/date is unrepresentable.
 /// </summary>
 public sealed record InvoiceSyncRow(
     InvoiceConfigurationId ConfigurationId,
     IntegrationType IntegrationType,
     string InvoiceDescription,
     bool IsActive,
-    DateOnly Date,
-    bool IsActualDate,
-    InvoiceWorkflowState State,
-    InvoiceSyncBucket Bucket,
-    Option<string> Diagnostic)
+    DateOnly ExpectedDate,
+    InvoiceWorkflowState State)
 {
+    public DateOnly Date => InvoiceSyncOverview.ActualDate(State) ?? ExpectedDate;
+    public bool IsActualDate => InvoiceSyncOverview.ActualDate(State) is not null;
+    public InvoiceSyncBucket Bucket => InvoiceSyncOverview.Bucket(State);
+    public Option<string> Diagnostic => InvoiceSyncOverview.Diagnostic(State);
     public bool CanResync => InvoiceRecordResync.IsEligible(State);
     public bool ResyncRequiresConfirmation => InvoiceRecordResync.RequiresConfirmation(State);
 }
@@ -83,13 +87,10 @@ public sealed class InvoiceSyncOverview(
             configuration.IntegrationType,
             configuration.InvoiceDescription,
             configuration.IsActive,
-            ActualDate(record.State) ?? record.ExpectedDate,
-            IsActualDate: ActualDate(record.State) is not null,
-            record.State,
-            Bucket(record.State),
-            Diagnostic(record.State));
+            record.ExpectedDate,
+            record.State);
 
-    private static DateOnly? ActualDate(InvoiceWorkflowState state) => state switch
+    internal static DateOnly? ActualDate(InvoiceWorkflowState state) => state switch
     {
         Expected => null,
         NotFound => null,
@@ -113,7 +114,7 @@ public sealed class InvoiceSyncOverview(
             InvoiceSyncBucket.InProgress,
     };
 
-    private static Option<string> Diagnostic(InvoiceWorkflowState state) => state switch
+    internal static Option<string> Diagnostic(InvoiceWorkflowState state) => state switch
     {
         Expected expected => expected.LastDiagnostic,
         NotFound notFound => notFound.Diagnostic,
