@@ -71,31 +71,37 @@
                                     @(row.Diagnostic is string diagnostic ? diagnostic : "—")
                                 </div>
                                 <div role="cell">
-                                    @if (row.CanResync && Model.HasWorkflowAuthorization)
+                                    @if (Model.HasWorkflowAuthorization)
                                     {
-                                        if (row.ResyncRequiresConfirmation)
-                                        {
-                                            <details class="resync-details">
-                                                <summary class="secondary-action">Resync</summary>
-                                                <div class="confirm-callout">
-                                                    This will supersede the pending Guess-removal intervention without a decision being recorded.
-                                                    <form method="post">
-                                                        <input type="hidden" name="id" value="@row.ConfigurationId.Value" />
-                                                        <input type="hidden" name="integrationType" value="@row.IntegrationType" />
-                                                        <label><input type="checkbox" name="confirmed" value="true" /> Confirm</label>
-                                                        <button asp-page-handler="ResyncRecord" class="secondary-action">Resync anyway</button>
-                                                    </form>
-                                                </div>
-                                            </details>
-                                        }
-                                        else
-                                        {
-                                            <form method="post">
-                                                <input type="hidden" name="id" value="@row.ConfigurationId.Value" />
-                                                <input type="hidden" name="integrationType" value="@row.IntegrationType" />
-                                                <button asp-page-handler="ResyncRecord" class="secondary-action">Resync</button>
-                                            </form>
-                                        }
+                                        <details class="row-actions">
+                                            <summary aria-label="Actions for @row.InvoiceDescription"></summary>
+                                            <div class="row-actions-panel">
+                                                <a class="row-action-item" asp-page="/Configurations/Edit" asp-route-id="@row.ConfigurationId.Value" asp-route-integrationType="@row.IntegrationType">Edit configuration</a>
+                                                @if (row.CanResync)
+                                                {
+                                                    if (row.ResyncRequiresConfirmation)
+                                                    {
+                                                        <div class="row-action-confirm">
+                                                            <p>This will supersede the pending Guess-removal intervention without a decision being recorded.</p>
+                                                            <form method="post">
+                                                                <input type="hidden" name="id" value="@row.ConfigurationId.Value" />
+                                                                <input type="hidden" name="integrationType" value="@row.IntegrationType" />
+                                                                <label><input type="checkbox" name="confirmed" value="true" /> Confirm</label>
+                                                                <button asp-page-handler="ResyncRecord" class="row-action-item">Resync anyway</button>
+                                                            </form>
+                                                        </div>
+                                                    }
+                                                    else
+                                                    {
+                                                        <form method="post">
+                                                            <input type="hidden" name="id" value="@row.ConfigurationId.Value" />
+                                                            <input type="hidden" name="integrationType" value="@row.IntegrationType" />
+                                                            <button asp-page-handler="ResyncRecord" class="row-action-item">Resync</button>
+                                                        </form>
+                                                    }
+                                                }
+                                            </div>
+                                        </details>
                                     }
                                 </div>
                             </div>

@@ -732,12 +732,6 @@ pre {
 .sync-pill-needs-attention { background: var(--warning-bg); color: #8a6d16; }
 .sync-pill-in-progress { background: var(--progress-bg, #eaf2fb); color: var(--progress-ink, #2c5a86); }
 
-.resync-details > summary {
-  list-style: none;
-  cursor: pointer;
-}
-.resync-details > summary::-webkit-details-marker { display: none; }
-
 .confirm-callout {
   margin-top: 8px;
   padding: 10px 14px;
@@ -753,3 +747,76 @@ pre {
 }
 .confirm-callout label { display: inline-flex; gap: .4rem; align-items: center; font-weight: 650; }
 .confirm-callout .secondary-action { min-height: 32px; padding: 0 12px; }
+
+/* Row actions: a "..." kebab menu, the standard pattern for more than one
+   per-row action in a data grid (GitHub, Gmail, etc.) - keeps the grid's
+   columns from growing a button per action as more actions are added. */
+.row-actions {
+  position: relative;
+  display: inline-block;
+}
+.row-actions > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 1.1rem;
+  line-height: 1;
+  letter-spacing: 1px;
+  cursor: pointer;
+  list-style: none;
+}
+.row-actions > summary:hover { background: var(--page); }
+.row-actions > summary::-webkit-details-marker { display: none; }
+.row-actions > summary::after { content: "\22EF"; }
+
+.row-actions-panel {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: max-content;
+  min-width: 12rem;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .12);
+}
+
+.row-action-item {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 500;
+  font-size: .9rem;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.row-action-item:hover { background: var(--page); }
+
+.row-action-confirm {
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--warning-bg);
+  font-size: .82rem;
+  color: #6b551a;
+}
+.row-action-confirm p { margin: 0 0 8px; }
+.row-action-confirm label { display: flex; gap: .4rem; align-items: center; font-weight: 650; margin-bottom: 8px; }
+.row-action-confirm .row-action-item { background: var(--panel); border: 1px solid var(--warning-line); text-align: center; }
+.row-action-confirm .row-action-item:hover { background: #fff9e6; }
