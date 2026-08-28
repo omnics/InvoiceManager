@@ -4,9 +4,12 @@ using InvoiceManager.Core.Integrations.FreeAgent;
 namespace InvoiceManager.Integrations.FreeAgent;
 
 /// <summary>
-/// Uploads/replaces a FreeAgent bill's attachment. Idempotent: compares the
-/// bill's existing attachment against the record's own last-known-good upload
-/// before deciding whether to call the (replacing) upload endpoint at all.
+/// Uploads/replaces a FreeAgent bill's attachment. Idempotent even across a lost
+/// <see cref="InvoiceRecord"/> history (e.g. a deleted or resynced record): an existing
+/// attachment is recognised as already correct either against the record's own
+/// last-known-good upload, or - failing that - by matching the name/size of the file this
+/// call is about to upload for this exact invoice (see issue #133), before deciding whether
+/// to call the (replacing) upload endpoint at all.
 /// </summary>
 internal sealed class FreeAgentAttachmentUploader : IFreeAgentAttachmentUploader
 {
@@ -42,12 +45,23 @@ internal sealed class FreeAgentAttachmentUploader : IFreeAgentAttachmentUploader
                 expected.FileSizeBytes == existingMetadata.FileSizeBytes &&
                 FreeAgentAttachmentContentType.IsPdf(existingMetadata.ContentType);
 
-            if (matchesOwnLastUpload)
+            // Also accepted even with no recorded history (e.g. after the InvoiceRecord that
+            // uploaded it was deleted or resynced): the generated file name deterministically
+            // encodes the invoice's vendor/date/amount, so a name+size match against the file
+            // this exact call is about to upload is strong evidence it's this invoice's own
+            // attachment, not a coincidence - see issue #133.
+            var matchesUpcomingUpload =
+                string.Equals(fileName, existingMetadata.FileName, StringComparison.Ordinal) &&
+                pdfContent.Length == existingMetadata.FileSizeBytes &&
+                FreeAgentAttachmentContentType.IsPdf(existingMetadata.ContentType);
+
+            if (matchesOwnLastUpload || matchesUpcomingUpload)
                 return new FreeAgentAttachmentAlreadyCorrect(existingMetadata);
 
-            // An attachment is present that doesn't match our own last-known-good upload
-            // (or we have none recorded) - someone attached something else directly in
-            // FreeAgent. Do not touch it; surface for manual investigation.
+            // An attachment is present that doesn't match our own last-known-good upload (or
+            // none recorded) and doesn't match the file we'd upload for this invoice either -
+            // someone attached something else directly in FreeAgent. Do not touch it; surface
+            // for manual investigation.
             return new FreeAgentAttachmentUnexpectedExisting(existingMetadata);
         }
 

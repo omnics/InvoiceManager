@@ -32,6 +32,55 @@ public sealed class FreeAgentAttachmentUploaderTests
     }
 
     [Fact]
+    public async Task UploadAsync_SkipsUpload_WhenNoOwnHistory_ButExistingAttachmentMatchesTheUpcomingUpload()
+    {
+        // No expectedExisting (e.g. the InvoiceRecord that made the original upload was deleted
+        // or resynced) - but the bill's existing attachment already has the exact name/size this
+        // call is about to upload for this invoice, which is accepted as proof it's already
+        // correct rather than "someone else's" - see issue #133.
+        var handler = new StubHttpMessageHandler((request, index) =>
+            index switch
+            {
+                0 => JsonResponse(BillWithAttachmentJson("invoice.pdf", 1024)),
+                _ => throw new InvalidOperationException("No upload call should have been made."),
+            });
+        var client = TestClientFactory.Create(handler);
+        var uploader = new FreeAgentAttachmentUploader(client);
+
+        var result = await uploader.UploadAsync(
+            new FreeAgentBillIdentity(BillUrl), new byte[1024], "invoice.pdf", Option.None);
+
+        Assert.True(result is FreeAgentAttachmentAlreadyCorrect, $"Expected FreeAgentAttachmentAlreadyCorrect but got {result}.");
+        Assert.Single(handler.Requests); // only the GET, no PUT
+    }
+
+    [Theory]
+    [InlineData("different-name.pdf", 1024, null)]
+    [InlineData("invoice.pdf", 500, null)]
+    [InlineData("invoice.pdf", 1024, "image/png")]
+    public async Task UploadAsync_ReturnsUnexpectedExisting_WhenNoOwnHistory_AndOnlyPartOfTheUpcomingUploadMatches(
+        string existingFileName, long existingFileSize, string? existingContentType)
+    {
+        // Each case matches two of the three conditions matchesUpcomingUpload requires
+        // (name, size, PDF content type) but not the third, so none should be enough on its
+        // own to make a regression that dropped one of the three checks pass unnoticed.
+        var handler = new StubHttpMessageHandler((request, index) =>
+            index switch
+            {
+                0 => JsonResponse(BillWithAttachmentJson(existingFileName, existingFileSize, existingContentType)),
+                _ => throw new InvalidOperationException("No upload call should have been made."),
+            });
+        var client = TestClientFactory.Create(handler);
+        var uploader = new FreeAgentAttachmentUploader(client);
+
+        var result = await uploader.UploadAsync(
+            new FreeAgentBillIdentity(BillUrl), new byte[1024], "invoice.pdf", Option.None);
+
+        Assert.True(result is FreeAgentAttachmentUnexpectedExisting, $"Expected FreeAgentAttachmentUnexpectedExisting but got {result}.");
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
     public async Task UploadAsync_ReturnsUnexpectedExisting_WhenAttachmentDoesNotMatchOwnHistory_AndNeverUploads()
     {
         var handler = new StubHttpMessageHandler((request, index) =>

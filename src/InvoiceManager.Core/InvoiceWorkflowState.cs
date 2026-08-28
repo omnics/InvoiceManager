@@ -136,8 +136,10 @@ public sealed record FreeAgentAttemptedAttachment(FreeAgentBillIdentity Bill, Fr
 /// A retry passes it back as <c>expectedExisting</c>, but only when the newly matched bill
 /// is the same one it was uploaded to, so it recognises its own prior upload instead of
 /// resuming with a fabricated identity. <see cref="Core.None"/> for every other error cause
-/// (a lock, a business rejection, or a failure before any attach was ever attempted), so a
-/// retry can never mistake a bill's pre-existing, unrelated attachment for its own.
+/// (a lock, a business rejection, or a failure before any attach was ever attempted) - this
+/// field carries no record-backed proof in that case, though the uploader may still separately
+/// recognise a pre-existing attachment as correct by matching the file about to be uploaded
+/// (see issue #133).
 /// </param>
 public sealed record FreeAgentError(
     ActualInvoiceDetails ActualDetails,

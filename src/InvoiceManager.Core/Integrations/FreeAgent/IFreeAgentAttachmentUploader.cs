@@ -8,8 +8,9 @@ public sealed record FreeAgentAttachmentReplaced(FreeAgentAttachmentMetadata Pre
 
 /// <summary>
 /// The existing attachment already matches what would have been uploaded (compared
-/// against the record's own last-known-good upload). No upload call was made -
-/// this is what makes retries idempotent.
+/// against the record's own last-known-good upload, or against the file this call is about to
+/// upload for this invoice - see issue #133). No upload call was made - this is what makes
+/// retries idempotent even across a lost record history.
 /// </summary>
 public sealed record FreeAgentAttachmentAlreadyCorrect(FreeAgentAttachmentMetadata Existing);
 
@@ -39,7 +40,9 @@ public interface IFreeAgentAttachmentUploader
     /// <param name="expectedExisting">
     /// The record's own last-known-good attachment metadata, if any, used to decide
     /// whether an existing attachment is already correct (skip), absent (fresh
-    /// upload), or unexpected (do not touch).
+    /// upload), or unexpected (do not touch). When absent or non-matching, an existing
+    /// attachment can still be recognised as correct by matching the name/size of the
+    /// file this call is about to upload for this invoice - see issue #133.
     /// </param>
     Task<FreeAgentAttachmentResult> UploadAsync(
         FreeAgentBillIdentity bill,
