@@ -73,8 +73,8 @@
                                 <div role="cell">
                                     @if (Model.HasWorkflowAuthorization)
                                     {
-                                        <details class="row-actions">
-                                            <summary aria-label="Actions for @row.InvoiceDescription"></summary>
+                                        <details class="row-actions" name="row-actions">
+                                            <summary aria-label="Actions for @(string.IsNullOrWhiteSpace(row.InvoiceDescription) ? row.ConfigurationId.Value : row.InvoiceDescription)"></summary>
                                             <div class="row-actions-panel">
                                                 <a class="row-action-item" asp-page="/Configurations/Edit" asp-route-id="@row.ConfigurationId.Value" asp-route-integrationType="@row.IntegrationType">Edit configuration</a>
                                                 @if (row.CanResync)

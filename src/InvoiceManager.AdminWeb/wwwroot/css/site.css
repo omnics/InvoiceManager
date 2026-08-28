@@ -662,6 +662,10 @@ pre {
    display:contents wrapper elements keep real table semantics for
    assistive tech while the cells participate directly in one set of
    grid tracks. Row spacing is plain `row-gap`, not empty spacer rows. */
+.table-scroll {
+  overflow-x: auto;
+}
+
 .invoice-sync-grid {
   display: grid;
   grid-template-columns: 4px minmax(150px, 1.3fr) minmax(110px, .8fr) minmax(120px, .9fr) minmax(170px, 1.6fr) minmax(90px, auto);
