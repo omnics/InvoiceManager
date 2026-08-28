@@ -469,8 +469,11 @@ public sealed class DueInvoiceProcessor(
             // matched. Any attachment already on the bill that we did not genuinely just POST to
             // it can only be someone else's, or an earlier attempt whose outcome we don't
             // actually know (a lock, a business rejection, a technical exception) - always None
-            // in those cases, so it is never mistaken for our own by a coincidental
-            // filename/size/content-type match.
+            // in those cases. FreeAgentAttachmentUploader still separately accepts a plain
+            // name/size match against the file about to be uploaded even when this is None (see
+            // issue #133) - e.g. after this InvoiceRecord's own history was lost - so passing
+            // Option.None here means "no same-run proof", not "treat any existing attachment as
+            // foreign".
             Option<FreeAgentAttachmentMetadata> expectedExisting =
                 savedRecord.State is FreeAgentError { AttemptedAttachment: FreeAgentAttemptedAttachment attempted } &&
                 attempted.Bill == billIdentity

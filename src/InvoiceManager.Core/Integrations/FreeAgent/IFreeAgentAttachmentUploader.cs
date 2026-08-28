@@ -39,7 +39,9 @@ public interface IFreeAgentAttachmentUploader
     /// <param name="expectedExisting">
     /// The record's own last-known-good attachment metadata, if any, used to decide
     /// whether an existing attachment is already correct (skip), absent (fresh
-    /// upload), or unexpected (do not touch).
+    /// upload), or unexpected (do not touch). When absent or non-matching, an existing
+    /// attachment can still be recognised as correct by matching the name/size of the
+    /// file this call is about to upload for this invoice - see issue #133.
     /// </param>
     Task<FreeAgentAttachmentResult> UploadAsync(
         FreeAgentBillIdentity bill,
