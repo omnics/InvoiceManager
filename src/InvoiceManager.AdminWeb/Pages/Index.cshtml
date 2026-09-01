@@ -86,6 +86,8 @@
                                                             <form method="post">
                                                                 <input type="hidden" name="id" value="@row.ConfigurationId.Value" />
                                                                 <input type="hidden" name="integrationType" value="@row.IntegrationType" />
+                                                                <input type="hidden" name="sort" value="@Model.Sort" />
+                                                                <input type="hidden" name="descending" value="@Model.SortDescending" />
                                                                 <label><input type="checkbox" name="confirmed" value="true" /> Confirm</label>
                                                                 <button asp-page-handler="ResyncRecord" class="row-action-item">Resync anyway</button>
                                                             </form>
@@ -96,6 +98,8 @@
                                                         <form method="post">
                                                             <input type="hidden" name="id" value="@row.ConfigurationId.Value" />
                                                             <input type="hidden" name="integrationType" value="@row.IntegrationType" />
+                                                            <input type="hidden" name="sort" value="@Model.Sort" />
+                                                            <input type="hidden" name="descending" value="@Model.SortDescending" />
                                                             <button asp-page-handler="ResyncRecord" class="row-action-item">Resync</button>
                                                         </form>
                                                     }
@@ -118,6 +122,8 @@
             Manually run expected record generation and due-invoice processing in the Functions app.
         </p>
         <form method="post" class="actions">
+            <input type="hidden" name="sort" value="@Model.Sort" />
+            <input type="hidden" name="descending" value="@Model.SortDescending" />
             <button asp-page-handler="GenerateExpectedRecords" class="secondary-action">
                 Generate expected records
             </button>

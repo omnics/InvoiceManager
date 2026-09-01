@@ -126,6 +126,25 @@ public sealed class IndexPageTests
     }
 
     [Fact]
+    public async Task GenerateExpectedRecords_RedirectsWithTheOperatorsCurrentSort_NotTheDefault()
+    {
+        // The rendered forms carry the current sort/descending as hidden fields (since a
+        // generated `formaction` URL from asp-page-handler doesn't inherit the page's query
+        // string), which model binding surfaces here via SortParam/DescendingParam - simulating
+        // that POST body content directly rather than only the query string.
+        var model = CreateIndexModel();
+        model.SortParam = InvoiceSyncSortColumn.Configuration;
+        model.DescendingParam = true;
+
+        var result = await model.OnPostGenerateExpectedRecordsAsync();
+
+        var redirect = Assert.IsType<Microsoft.AspNetCore.Mvc.RedirectToPageResult>(result);
+        var routeValues = Assert.IsAssignableFrom<IDictionary<string, object?>>(redirect.RouteValues);
+        Assert.Equal(InvoiceSyncSortColumn.Configuration, routeValues!["sort"]);
+        Assert.Equal(true, routeValues["descending"]);
+    }
+
+    [Fact]
     public async Task ResyncRecord_PassesConfirmedThroughToTheTrigger_AndSurfacesSucceeded()
     {
         var resyncTrigger = new FakeInvoiceRecordResyncTrigger(
