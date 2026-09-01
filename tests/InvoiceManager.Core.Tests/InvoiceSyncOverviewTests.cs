@@ -52,6 +52,94 @@ public sealed class InvoiceSyncOverviewTests
     }
 
     [Fact]
+    public async Task GetRowsAsync_ShowsEveryNonCompleteRecord_NotJustTheMostRecentOne()
+    {
+        // Regression test for issue #135: several periods can pile up stuck (e.g. repeatedly
+        // failing FreeAgent matching) between the last completed record and the current one -
+        // all of them must be visible, not just the single most recent record.
+        var config = Configurations.Build(id: new InvoiceConfigurationId("acme"));
+        var completed = Records.Build(
+            config,
+            expectedDate: new DateOnly(2025, 5, 1),
+            state: new FreeAgentAttached(
+                Actuals.Build(new DateOnly(2025, 5, 1)),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item"),
+                new Integrations.FreeAgent.FreeAgentBillIdentity("https://api.freeagent.com/v2/bills/1"),
+                new Integrations.FreeAgent.FreeAgentAttachmentMetadata(
+                    "invoice.pdf", 1024, "application/pdf", DateTimeOffset.UtcNow)));
+        var stuckJune = Records.Build(
+            config, expectedDate: new DateOnly(2025, 6, 1), state: new FreeAgentMatchExpected(
+                Actuals.Build(new DateOnly(2025, 6, 1)),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item"),
+                Option.None));
+        var stuckJuly = Records.Build(
+            config, expectedDate: new DateOnly(2025, 7, 1), state: new FreeAgentMatchExpected(
+                Actuals.Build(new DateOnly(2025, 7, 1)),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item"),
+                Option.None));
+        var current = Records.Build(config, expectedDate: new DateOnly(2025, 8, 1), state: new Expected(Option.None));
+        var records = new InMemoryInvoiceRecordRepository(completed, stuckJune, stuckJuly, current);
+        var overview = new InvoiceSyncOverview(
+            new InvoiceConfigurationService(new FakeConfigurationRepository(config)), records);
+
+        var rows = await overview.GetRowsAsync();
+
+        Assert.Equal(
+            [new DateOnly(2025, 8, 1), new DateOnly(2025, 7, 1), new DateOnly(2025, 6, 1), new DateOnly(2025, 5, 1)],
+            rows.Select(r => r.Date));
+    }
+
+    [Fact]
+    public async Task GetRowsAsync_OnlyOffersResync_OnTheConfigurationsActualMostRecentRecord()
+    {
+        // InvoiceRecordResync.ResyncMostRecentAsync always acts on a configuration's single most
+        // recent record regardless of which row's button was clicked, so - now that several
+        // non-complete rows can be shown for one configuration - only the row that's actually the
+        // most recent record may report CanResync; an older stuck row must not, or clicking its
+        // Resync button would silently mutate a different, newer record instead.
+        var config = Configurations.Build(id: new InvoiceConfigurationId("acme"));
+        var stuckJune = Records.Build(
+            config, expectedDate: new DateOnly(2025, 6, 1), state: new RetrievalError("transient failure"));
+        var stuckJuly = Records.Build(
+            config, expectedDate: new DateOnly(2025, 7, 1), state: new RetrievalError("transient failure"));
+        var records = new InMemoryInvoiceRecordRepository(stuckJune, stuckJuly);
+        var overview = new InvoiceSyncOverview(
+            new InvoiceConfigurationService(new FakeConfigurationRepository(config)), records);
+
+        var rows = await overview.GetRowsAsync();
+
+        var july = Assert.Single(rows, r => r.Date == new DateOnly(2025, 7, 1));
+        var june = Assert.Single(rows, r => r.Date == new DateOnly(2025, 6, 1));
+        Assert.True(july.CanResync);
+        Assert.False(june.CanResync);
+    }
+
+    [Fact]
+    public async Task GetRowsAsync_OffersResync_OnTheMostRecentRecord_EvenWhenItIsAlreadyComplete()
+    {
+        // The overall most recent record can be complete while an older record is still stuck
+        // (e.g. a later period matched cleanly while an earlier one didn't) - in that case the
+        // completed record is still "most recent" and the older stuck one must not be resyncable.
+        var config = Configurations.Build(id: new InvoiceConfigurationId("acme"));
+        var stuckJune = Records.Build(
+            config, expectedDate: new DateOnly(2025, 6, 1), state: new RetrievalError("transient failure"));
+        var completedJuly = Records.Build(
+            config,
+            expectedDate: new DateOnly(2025, 7, 1),
+            state: new SavedToOneDrive(
+                Actuals.Build(new DateOnly(2025, 7, 1)),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item")));
+        var records = new InMemoryInvoiceRecordRepository(stuckJune, completedJuly);
+        var overview = new InvoiceSyncOverview(
+            new InvoiceConfigurationService(new FakeConfigurationRepository(config)), records);
+
+        var rows = await overview.GetRowsAsync();
+
+        var june = Assert.Single(rows, r => r.Date == new DateOnly(2025, 6, 1));
+        Assert.False(june.CanResync);
+    }
+
+    [Fact]
     public async Task GetRowsAsync_OmitsAConfiguration_ThatHasNeverHadARecordGenerated()
     {
         var config = Configurations.Build(id: new InvoiceConfigurationId("never-generated"));

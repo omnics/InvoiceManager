@@ -37,13 +37,23 @@ public sealed record InvoiceSyncRow(
     string InvoiceDescription,
     bool IsActive,
     DateOnly ExpectedDate,
-    InvoiceWorkflowState State)
+    InvoiceWorkflowState State,
+    bool IsMostRecent)
 {
     public DateOnly Date => InvoiceSyncOverview.ActualDate(State) is DateOnly actual ? actual : ExpectedDate;
     public bool IsActualDate => InvoiceSyncOverview.ActualDate(State) is DateOnly;
     public InvoiceSyncBucket Bucket => InvoiceSyncOverview.Bucket(State);
     public Option<string> Diagnostic => InvoiceSyncOverview.Diagnostic(State);
-    public bool CanResync => InvoiceRecordResync.IsEligible(State);
+
+    /// <summary>
+    /// Whether this row's Resync action is offered. <see cref="InvoiceRecordResync.ResyncMostRecentAsync"/>
+    /// always operates on a configuration's single most recent record regardless of which row's
+    /// button was clicked, so - now that several non-complete rows can be shown for one
+    /// configuration (see issue #135) - only <see cref="IsMostRecent"/>'s row may offer it; an
+    /// older stuck row is shown for visibility only, not resyncable, to avoid a click on it
+    /// silently mutating a different, more recent record instead.
+    /// </summary>
+    public bool CanResync => IsMostRecent && InvoiceRecordResync.IsEligible(State);
     public bool ResyncRequiresConfirmation => InvoiceRecordResync.RequiresConfirmation(State);
 
     /// <summary>
@@ -53,13 +63,22 @@ public sealed record InvoiceSyncRow(
     /// case it currently holds.
     /// </summary>
     public string StateName => InvoiceSyncOverview.StateName(State);
+
+    /// <summary>
+    /// The name shown for this row's configuration - <see cref="InvoiceDescription"/> when set,
+    /// otherwise <see cref="ConfigurationId"/>. Shared by the view and by column-header sorting so
+    /// both agree on what "Configuration" sorts by.
+    /// </summary>
+    public string DisplayName => string.IsNullOrWhiteSpace(InvoiceDescription) ? ConfigurationId.Value : InvoiceDescription;
 }
 
 /// <summary>
-/// Builds the AdminWeb home dashboard's rows: for every configuration, its current record (in
-/// whatever state) plus the last one that completed, only when the current record isn't itself
-/// complete - see docs/design/issue-128-home-dashboard.png and issue #128 for why. A
-/// configuration that has never had a record generated for it contributes no rows.
+/// Builds the AdminWeb home dashboard's rows: for every configuration, every record that hasn't
+/// completed (which can be more than one - e.g. several periods stuck in
+/// <see cref="FreeAgentMatchExpected"/>) plus the last one that did complete - see
+/// docs/design/issue-128-home-dashboard.png and issue #128 for the original design, and issue #135
+/// for why a single "current record" isn't enough to surface every stuck record. A configuration
+/// that has never had a record generated for it contributes no rows.
 /// </summary>
 public sealed class InvoiceSyncOverview(
     InvoiceConfigurationService configurationService,
@@ -74,29 +93,44 @@ public sealed class InvoiceSyncOverview(
         {
             var configuration = stored.Configuration;
 
-            if (await recordRepository.GetMostRecentAsync(configuration.Id, cancellationToken) is not InvoiceRecord current)
-                continue;
+            // ListNonCompleteAsync is ordered by expected date descending, so nonComplete[0] (if
+            // any) is the most recent non-complete record. The configuration's single overall
+            // most recent record - the one InvoiceRecordResync.ResyncMostRecentAsync would act on
+            // - is whichever of that and the most recent completed record has the later expected
+            // date; every record is one or the other, so this pair alone determines it without an
+            // extra repository round-trip.
+            var nonComplete = await recordRepository.ListNonCompleteAsync(configuration.Id, cancellationToken);
+            var lastCompletedOption = await recordRepository.GetMostRecentCompletedAsync(configuration.Id, cancellationToken);
+            var lastCompleted = lastCompletedOption is InvoiceRecord completed ? completed : null;
+            var mostRecentNonComplete = nonComplete.Count > 0 ? nonComplete[0] : null;
 
-            rows.Add(ToRow(configuration, current));
-
-            if (Bucket(current.State) != InvoiceSyncBucket.Complete &&
-                await recordRepository.GetMostRecentCompletedAsync(configuration.Id, cancellationToken) is InvoiceRecord lastCompleted)
+            var mostRecentId = (mostRecentNonComplete, lastCompleted) switch
             {
-                rows.Add(ToRow(configuration, lastCompleted));
-            }
+                (null, null) => null,
+                ({ } nc, null) => nc.Id,
+                (null, { } c) => c.Id,
+                ({ } nc, { } c) => nc.ExpectedDate >= c.ExpectedDate ? nc.Id : c.Id,
+            };
+
+            foreach (var record in nonComplete)
+                rows.Add(ToRow(configuration, record, record.Id == mostRecentId));
+
+            if (lastCompleted is not null)
+                rows.Add(ToRow(configuration, lastCompleted, lastCompleted.Id == mostRecentId));
         }
 
         return rows.OrderByDescending(r => r.Date).ToList();
     }
 
-    private static InvoiceSyncRow ToRow(InvoiceConfiguration configuration, InvoiceRecord record) =>
+    private static InvoiceSyncRow ToRow(InvoiceConfiguration configuration, InvoiceRecord record, bool isMostRecent) =>
         new(
             configuration.Id,
             configuration.IntegrationType,
             configuration.InvoiceDescription,
             configuration.IsActive,
             record.ExpectedDate,
-            record.State);
+            record.State,
+            isMostRecent);
 
     internal static Option<DateOnly> ActualDate(InvoiceWorkflowState state) => state switch
     {

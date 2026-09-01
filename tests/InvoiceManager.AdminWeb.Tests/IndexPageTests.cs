@@ -69,6 +69,82 @@ public sealed class IndexPageTests
     }
 
     [Fact]
+    public async Task OnGetAsync_DefaultsToDateDescending_WhenNoSortIsRequested()
+    {
+        var config = Configurations.Build(id: new InvoiceConfigurationId("acme"));
+        var older = Records.Build(config, expectedDate: new DateOnly(2025, 6, 1), state: new Expected(Option.None));
+        var newer = Records.Build(config, expectedDate: new DateOnly(2025, 7, 1), state: new Expected(Option.None));
+        var records = new InMemoryInvoiceRecordRepository(older, newer);
+        var overview = new InvoiceSyncOverview(
+            new InvoiceConfigurationService(new FakeConfigurationRepository(config)), records);
+        var model = CreateIndexModel(overview: overview);
+
+        await model.OnGetAsync();
+
+        Assert.Equal(InvoiceSyncSortColumn.Date, model.Sort);
+        Assert.True(model.SortDescending);
+        Assert.Equal([new DateOnly(2025, 7, 1), new DateOnly(2025, 6, 1)], model.Rows.Select(r => r.Date));
+    }
+
+    [Fact]
+    public async Task OnGetAsync_SortsByConfigurationAscending_WhenRequested()
+    {
+        var configA = Configurations.Build(id: new InvoiceConfigurationId("a"), invoiceDescription: "Zeta");
+        var configB = Configurations.Build(id: new InvoiceConfigurationId("b"), invoiceDescription: "Alpha");
+        var recordA = Records.Build(configA, expectedDate: new DateOnly(2025, 7, 1), state: new Expected(Option.None));
+        var recordB = Records.Build(configB, expectedDate: new DateOnly(2025, 6, 1), state: new Expected(Option.None));
+        var records = new InMemoryInvoiceRecordRepository(recordA, recordB);
+        var overview = new InvoiceSyncOverview(
+            new InvoiceConfigurationService(new FakeConfigurationRepository(configA, configB)), records);
+        var model = CreateIndexModel(overview: overview);
+        model.SortParam = InvoiceSyncSortColumn.Configuration;
+
+        await model.OnGetAsync();
+
+        Assert.False(model.SortDescending);
+        Assert.Equal(["Alpha", "Zeta"], model.Rows.Select(r => r.DisplayName));
+    }
+
+    [Fact]
+    public async Task OnGetAsync_TogglesToDescending_WhenDescendingParamIsExplicitlyTrue()
+    {
+        var configA = Configurations.Build(id: new InvoiceConfigurationId("a"), invoiceDescription: "Zeta");
+        var configB = Configurations.Build(id: new InvoiceConfigurationId("b"), invoiceDescription: "Alpha");
+        var recordA = Records.Build(configA, expectedDate: new DateOnly(2025, 7, 1), state: new Expected(Option.None));
+        var recordB = Records.Build(configB, expectedDate: new DateOnly(2025, 6, 1), state: new Expected(Option.None));
+        var records = new InMemoryInvoiceRecordRepository(recordA, recordB);
+        var overview = new InvoiceSyncOverview(
+            new InvoiceConfigurationService(new FakeConfigurationRepository(configA, configB)), records);
+        var model = CreateIndexModel(overview: overview);
+        model.SortParam = InvoiceSyncSortColumn.Configuration;
+        model.DescendingParam = true;
+
+        await model.OnGetAsync();
+
+        Assert.True(model.SortDescending);
+        Assert.Equal(["Zeta", "Alpha"], model.Rows.Select(r => r.DisplayName));
+    }
+
+    [Fact]
+    public async Task GenerateExpectedRecords_RedirectsWithTheOperatorsCurrentSort_NotTheDefault()
+    {
+        // The rendered forms carry the current sort/descending as hidden fields (since a
+        // generated `formaction` URL from asp-page-handler doesn't inherit the page's query
+        // string), which model binding surfaces here via SortParam/DescendingParam - simulating
+        // that POST body content directly rather than only the query string.
+        var model = CreateIndexModel();
+        model.SortParam = InvoiceSyncSortColumn.Configuration;
+        model.DescendingParam = true;
+
+        var result = await model.OnPostGenerateExpectedRecordsAsync();
+
+        var redirect = Assert.IsType<Microsoft.AspNetCore.Mvc.RedirectToPageResult>(result);
+        var routeValues = Assert.IsAssignableFrom<IDictionary<string, object?>>(redirect.RouteValues);
+        Assert.Equal(InvoiceSyncSortColumn.Configuration, routeValues!["sort"]);
+        Assert.Equal(true, routeValues["descending"]);
+    }
+
+    [Fact]
     public async Task ResyncRecord_PassesConfirmedThroughToTheTrigger_AndSurfacesSucceeded()
     {
         var resyncTrigger = new FakeInvoiceRecordResyncTrigger(

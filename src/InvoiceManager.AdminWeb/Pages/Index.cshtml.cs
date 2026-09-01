@@ -6,6 +6,16 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace InvoiceManager.AdminWeb.Pages;
 
+/// <summary>
+/// The three home dashboard columns an operator can sort by, clicking a column header.
+/// </summary>
+public enum InvoiceSyncSortColumn
+{
+    Configuration,
+    Date,
+    Status,
+}
+
 public class IndexModel(
     IExpectedRecordGenerationTrigger expectedRecordGenerationTrigger,
     InvoiceSyncOverview overview,
@@ -15,9 +25,24 @@ public class IndexModel(
     public IReadOnlyList<InvoiceSyncRow> Rows { get; private set; } = [];
     public bool HasWorkflowAuthorization { get; private set; }
     public string? StatusMessage { get; private set; }
+    public InvoiceSyncSortColumn Sort { get; private set; }
+    public bool SortDescending { get; private set; }
+
+    /// <summary>
+    /// Bound from the "sort"/"descending" query string on every request, GET or POST, so a
+    /// resync/generate POST can echo the operator's current sort back into its redirect. Nullable
+    /// so an absent query value is distinguishable from an explicit "not descending" - see
+    /// <see cref="ResolveSort"/>.
+    /// </summary>
+    [BindProperty(SupportsGet = true, Name = "sort")]
+    public InvoiceSyncSortColumn? SortParam { get; set; }
+
+    [BindProperty(SupportsGet = true, Name = "descending")]
+    public bool? DescendingParam { get; set; }
 
     public async Task OnGetAsync()
     {
+        ResolveSort();
         await LoadAsync();
         StatusMessage = TempData["StatusMessage"] as string;
     }
@@ -34,7 +59,7 @@ public class IndexModel(
             ExpectedRecordGenerationFailed failed =>
                 $"Expected record generation could not be triggered. {failed.Message}",
         };
-        return RedirectToPage();
+        return RedirectToCurrentSort();
     }
 
     public async Task<IActionResult> OnPostResyncRecordAsync(string id, IntegrationType integrationType, bool confirmed)
@@ -42,7 +67,7 @@ public class IndexModel(
         if (!await authorizationStore.HasTokenCacheAsync(HttpContext.RequestAborted))
         {
             TempData["StatusMessage"] = "Capture Microsoft authorization before resyncing a record.";
-            return RedirectToPage();
+            return RedirectToCurrentSort();
         }
 
         var result = await resyncTrigger.TriggerAsync(
@@ -64,12 +89,41 @@ public class IndexModel(
                 "The Functions app URL is not configured, so the resync could not be triggered.",
             InvoiceRecordResyncFailed failed => $"The resync could not be triggered. {failed.Message}",
         };
-        return RedirectToPage();
+        return RedirectToCurrentSort();
+    }
+
+    /// <summary>
+    /// Resolves <see cref="Sort"/>/<see cref="SortDescending"/> from the bound query values,
+    /// defaulting to date descending (the dashboard's original default) when nothing was
+    /// specified, and to ascending for a newly-selected non-date column.
+    /// </summary>
+    private void ResolveSort()
+    {
+        Sort = SortParam ?? InvoiceSyncSortColumn.Date;
+        SortDescending = DescendingParam ?? (Sort == InvoiceSyncSortColumn.Date);
+    }
+
+    private IActionResult RedirectToCurrentSort()
+    {
+        ResolveSort();
+        return RedirectToPage(new { sort = Sort, descending = SortDescending });
     }
 
     private async Task LoadAsync()
     {
-        Rows = await overview.GetRowsAsync(HttpContext.RequestAborted);
+        var rows = await overview.GetRowsAsync(HttpContext.RequestAborted);
+        Rows = Sort switch
+        {
+            InvoiceSyncSortColumn.Configuration => SortDescending
+                ? rows.OrderByDescending(r => r.DisplayName, StringComparer.OrdinalIgnoreCase).ToList()
+                : rows.OrderBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase).ToList(),
+            InvoiceSyncSortColumn.Status => SortDescending
+                ? rows.OrderByDescending(r => r.Bucket).ToList()
+                : rows.OrderBy(r => r.Bucket).ToList(),
+            _ => SortDescending
+                ? rows.OrderByDescending(r => r.Date).ToList()
+                : rows.OrderBy(r => r.Date).ToList(),
+        };
         HasWorkflowAuthorization = await authorizationStore.HasTokenCacheAsync(HttpContext.RequestAborted);
     }
 }

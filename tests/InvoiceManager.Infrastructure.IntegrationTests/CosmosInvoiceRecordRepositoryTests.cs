@@ -1,4 +1,5 @@
 using InvoiceManager.Core;
+using InvoiceManager.Core.Integrations.FreeAgent;
 using InvoiceManager.Infrastructure.CosmosDb;
 using Microsoft.Azure.Cosmos;
 using NodaMoney;
@@ -120,6 +121,68 @@ public sealed class CosmosInvoiceRecordRepositoryTests : IAsyncLifetime
         var result = await repository.GetMostRecentCompletedAsync(configurationId);
 
         Assert.True(result is None);
+    }
+
+    [Fact]
+    public async Task ListNonCompleteAsync_ReturnsEveryNonTerminalSuccessRecord_OrderedByExpectedDateDescending()
+    {
+        var configurationId = new InvoiceConfigurationId("list-non-complete");
+        var otherConfigurationId = new InvoiceConfigurationId("list-non-complete-other");
+
+        var savedToOneDrive = BuildRecord(
+            configurationId,
+            new DateOnly(2025, 4, 1),
+            state: new SavedToOneDrive(
+                BuildActualDetails(),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/saved.pdf", "test-drive", "saved-item")));
+        var reconciledFromOneDrive = BuildRecord(
+            configurationId,
+            new DateOnly(2025, 5, 1),
+            state: new ReconciledFromOneDrive(
+                BuildActualDetails(),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/reconciled.pdf", "test-drive", "reconciled-item"),
+                "matched existing file",
+                DateTimeOffset.UtcNow));
+        var freeAgentAttached = BuildRecord(
+            configurationId,
+            new DateOnly(2025, 6, 1),
+            state: new FreeAgentAttached(
+                BuildActualDetails(),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/attached.pdf", "test-drive", "attached-item"),
+                new FreeAgentBillIdentity("https://api.freeagent.com/v2/bills/1"),
+                new FreeAgentAttachmentMetadata(
+                    "invoice.pdf", 1024, "application/pdf", DateTimeOffset.UtcNow)));
+        var stuckJuly = BuildRecord(
+            configurationId,
+            new DateOnly(2025, 7, 1),
+            state: new FreeAgentMatchExpected(
+                BuildActualDetails(),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/fa-match.pdf", "test-drive", "fa-match-item"),
+                Option.None));
+        var stuckAugust = BuildRecord(
+            configurationId,
+            new DateOnly(2025, 8, 1),
+            state: new RetrievalError("transient failure"));
+        var currentExpected = BuildRecord(
+            configurationId,
+            new DateOnly(2025, 9, 1),
+            state: new Expected(Option.None));
+        var otherConfigurationRecord = BuildRecord(
+            otherConfigurationId,
+            new DateOnly(2025, 9, 1),
+            state: new Expected(Option.None));
+
+        await repository!.CreateIfNotExistsAsync(savedToOneDrive);
+        await repository.CreateIfNotExistsAsync(reconciledFromOneDrive);
+        await repository.CreateIfNotExistsAsync(freeAgentAttached);
+        await repository.CreateIfNotExistsAsync(stuckJuly);
+        await repository.CreateIfNotExistsAsync(stuckAugust);
+        await repository.CreateIfNotExistsAsync(currentExpected);
+        await repository.CreateIfNotExistsAsync(otherConfigurationRecord);
+
+        var nonComplete = await repository.ListNonCompleteAsync(configurationId);
+
+        Assert.Equal([currentExpected.Id, stuckAugust.Id, stuckJuly.Id], nonComplete.Select(r => r.Id));
     }
 
     [Fact]
