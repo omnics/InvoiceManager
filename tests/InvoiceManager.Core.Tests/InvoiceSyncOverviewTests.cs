@@ -52,6 +52,44 @@ public sealed class InvoiceSyncOverviewTests
     }
 
     [Fact]
+    public async Task GetRowsAsync_ShowsEveryNonCompleteRecord_NotJustTheMostRecentOne()
+    {
+        // Regression test for issue #135: several periods can pile up stuck (e.g. repeatedly
+        // failing FreeAgent matching) between the last completed record and the current one -
+        // all of them must be visible, not just the single most recent record.
+        var config = Configurations.Build(id: new InvoiceConfigurationId("acme"));
+        var completed = Records.Build(
+            config,
+            expectedDate: new DateOnly(2025, 5, 1),
+            state: new FreeAgentAttached(
+                Actuals.Build(new DateOnly(2025, 5, 1)),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item"),
+                new Integrations.FreeAgent.FreeAgentBillIdentity("https://api.freeagent.com/v2/bills/1"),
+                new Integrations.FreeAgent.FreeAgentAttachmentMetadata(
+                    "invoice.pdf", 1024, "application/pdf", DateTimeOffset.UtcNow)));
+        var stuckJune = Records.Build(
+            config, expectedDate: new DateOnly(2025, 6, 1), state: new FreeAgentMatchExpected(
+                Actuals.Build(new DateOnly(2025, 6, 1)),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item"),
+                Option.None));
+        var stuckJuly = Records.Build(
+            config, expectedDate: new DateOnly(2025, 7, 1), state: new FreeAgentMatchExpected(
+                Actuals.Build(new DateOnly(2025, 7, 1)),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item"),
+                Option.None));
+        var current = Records.Build(config, expectedDate: new DateOnly(2025, 8, 1), state: new Expected(Option.None));
+        var records = new InMemoryInvoiceRecordRepository(completed, stuckJune, stuckJuly, current);
+        var overview = new InvoiceSyncOverview(
+            new InvoiceConfigurationService(new FakeConfigurationRepository(config)), records);
+
+        var rows = await overview.GetRowsAsync();
+
+        Assert.Equal(
+            [new DateOnly(2025, 8, 1), new DateOnly(2025, 7, 1), new DateOnly(2025, 6, 1), new DateOnly(2025, 5, 1)],
+            rows.Select(r => r.Date));
+    }
+
+    [Fact]
     public async Task GetRowsAsync_OmitsAConfiguration_ThatHasNeverHadARecordGenerated()
     {
         var config = Configurations.Build(id: new InvoiceConfigurationId("never-generated"));

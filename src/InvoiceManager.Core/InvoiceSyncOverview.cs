@@ -53,13 +53,22 @@ public sealed record InvoiceSyncRow(
     /// case it currently holds.
     /// </summary>
     public string StateName => InvoiceSyncOverview.StateName(State);
+
+    /// <summary>
+    /// The name shown for this row's configuration - <see cref="InvoiceDescription"/> when set,
+    /// otherwise <see cref="ConfigurationId"/>. Shared by the view and by column-header sorting so
+    /// both agree on what "Configuration" sorts by.
+    /// </summary>
+    public string DisplayName => string.IsNullOrWhiteSpace(InvoiceDescription) ? ConfigurationId.Value : InvoiceDescription;
 }
 
 /// <summary>
-/// Builds the AdminWeb home dashboard's rows: for every configuration, its current record (in
-/// whatever state) plus the last one that completed, only when the current record isn't itself
-/// complete - see docs/design/issue-128-home-dashboard.png and issue #128 for why. A
-/// configuration that has never had a record generated for it contributes no rows.
+/// Builds the AdminWeb home dashboard's rows: for every configuration, every record that hasn't
+/// completed (which can be more than one - e.g. several periods stuck in
+/// <see cref="FreeAgentMatchExpected"/>) plus the last one that did complete - see
+/// docs/design/issue-128-home-dashboard.png and issue #128 for the original design, and issue #135
+/// for why a single "current record" isn't enough to surface every stuck record. A configuration
+/// that has never had a record generated for it contributes no rows.
 /// </summary>
 public sealed class InvoiceSyncOverview(
     InvoiceConfigurationService configurationService,
@@ -74,16 +83,12 @@ public sealed class InvoiceSyncOverview(
         {
             var configuration = stored.Configuration;
 
-            if (await recordRepository.GetMostRecentAsync(configuration.Id, cancellationToken) is not InvoiceRecord current)
-                continue;
+            var nonComplete = await recordRepository.ListNonCompleteAsync(configuration.Id, cancellationToken);
+            foreach (var record in nonComplete)
+                rows.Add(ToRow(configuration, record));
 
-            rows.Add(ToRow(configuration, current));
-
-            if (Bucket(current.State) != InvoiceSyncBucket.Complete &&
-                await recordRepository.GetMostRecentCompletedAsync(configuration.Id, cancellationToken) is InvoiceRecord lastCompleted)
-            {
+            if (await recordRepository.GetMostRecentCompletedAsync(configuration.Id, cancellationToken) is InvoiceRecord lastCompleted)
                 rows.Add(ToRow(configuration, lastCompleted));
-            }
         }
 
         return rows.OrderByDescending(r => r.Date).ToList();

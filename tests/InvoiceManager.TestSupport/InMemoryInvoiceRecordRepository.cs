@@ -45,6 +45,18 @@ public class InMemoryInvoiceRecordRepository : IInvoiceRecordRepository
         return Task.FromResult(result);
     }
 
+    public virtual Task<IReadOnlyList<InvoiceRecord>> ListNonCompleteAsync(
+        InvoiceConfigurationId configurationId,
+        CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<InvoiceRecord> records = store
+            .Where(r => r.ConfigurationId == configurationId
+                && r.State is not (SavedToOneDrive or ReconciledFromOneDrive or FreeAgentAttached))
+            .OrderByDescending(r => r.ExpectedDate)
+            .ToList();
+        return Task.FromResult(records);
+    }
+
     public Task CreateIfNotExistsAsync(InvoiceRecord record, CancellationToken cancellationToken = default)
     {
         if (!store.Any(r => r.Id == record.Id))

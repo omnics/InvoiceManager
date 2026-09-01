@@ -21,6 +21,16 @@ public interface IInvoiceRecordRepository
     Task<Option<InvoiceRecord>> GetMostRecentCompletedAsync(InvoiceConfigurationId configurationId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns every invoice record for the given configuration whose state is not a terminal
+    /// success (i.e. everything <see cref="GetMostRecentCompletedAsync"/> would exclude), ordered
+    /// by expected date descending. A configuration can accumulate more than one of these between
+    /// its last completed record and its current one - for example several periods stuck in
+    /// <see cref="FreeAgentMatchExpected"/> - so the AdminWeb home dashboard uses this instead of
+    /// just the single most recent record to make sure none of them go unnoticed.
+    /// </summary>
+    Task<IReadOnlyList<InvoiceRecord>> ListNonCompleteAsync(InvoiceConfigurationId configurationId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Persists a new invoice record. If a record with the same ID already exists (i.e. the same
     /// configuration and expected date), the call is a no-op — the existing record is not overwritten.
     /// </summary>
