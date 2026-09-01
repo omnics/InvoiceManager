@@ -37,13 +37,23 @@ public sealed record InvoiceSyncRow(
     string InvoiceDescription,
     bool IsActive,
     DateOnly ExpectedDate,
-    InvoiceWorkflowState State)
+    InvoiceWorkflowState State,
+    bool IsMostRecent)
 {
     public DateOnly Date => InvoiceSyncOverview.ActualDate(State) is DateOnly actual ? actual : ExpectedDate;
     public bool IsActualDate => InvoiceSyncOverview.ActualDate(State) is DateOnly;
     public InvoiceSyncBucket Bucket => InvoiceSyncOverview.Bucket(State);
     public Option<string> Diagnostic => InvoiceSyncOverview.Diagnostic(State);
-    public bool CanResync => InvoiceRecordResync.IsEligible(State);
+
+    /// <summary>
+    /// Whether this row's Resync action is offered. <see cref="InvoiceRecordResync.ResyncMostRecentAsync"/>
+    /// always operates on a configuration's single most recent record regardless of which row's
+    /// button was clicked, so - now that several non-complete rows can be shown for one
+    /// configuration (see issue #135) - only <see cref="IsMostRecent"/>'s row may offer it; an
+    /// older stuck row is shown for visibility only, not resyncable, to avoid a click on it
+    /// silently mutating a different, more recent record instead.
+    /// </summary>
+    public bool CanResync => IsMostRecent && InvoiceRecordResync.IsEligible(State);
     public bool ResyncRequiresConfirmation => InvoiceRecordResync.RequiresConfirmation(State);
 
     /// <summary>
@@ -83,25 +93,44 @@ public sealed class InvoiceSyncOverview(
         {
             var configuration = stored.Configuration;
 
+            // ListNonCompleteAsync is ordered by expected date descending, so nonComplete[0] (if
+            // any) is the most recent non-complete record. The configuration's single overall
+            // most recent record - the one InvoiceRecordResync.ResyncMostRecentAsync would act on
+            // - is whichever of that and the most recent completed record has the later expected
+            // date; every record is one or the other, so this pair alone determines it without an
+            // extra repository round-trip.
             var nonComplete = await recordRepository.ListNonCompleteAsync(configuration.Id, cancellationToken);
-            foreach (var record in nonComplete)
-                rows.Add(ToRow(configuration, record));
+            var lastCompletedOption = await recordRepository.GetMostRecentCompletedAsync(configuration.Id, cancellationToken);
+            var lastCompleted = lastCompletedOption is InvoiceRecord completed ? completed : null;
+            var mostRecentNonComplete = nonComplete.Count > 0 ? nonComplete[0] : null;
 
-            if (await recordRepository.GetMostRecentCompletedAsync(configuration.Id, cancellationToken) is InvoiceRecord lastCompleted)
-                rows.Add(ToRow(configuration, lastCompleted));
+            var mostRecentId = (mostRecentNonComplete, lastCompleted) switch
+            {
+                (null, null) => null,
+                ({ } nc, null) => nc.Id,
+                (null, { } c) => c.Id,
+                ({ } nc, { } c) => nc.ExpectedDate >= c.ExpectedDate ? nc.Id : c.Id,
+            };
+
+            foreach (var record in nonComplete)
+                rows.Add(ToRow(configuration, record, record.Id == mostRecentId));
+
+            if (lastCompleted is not null)
+                rows.Add(ToRow(configuration, lastCompleted, lastCompleted.Id == mostRecentId));
         }
 
         return rows.OrderByDescending(r => r.Date).ToList();
     }
 
-    private static InvoiceSyncRow ToRow(InvoiceConfiguration configuration, InvoiceRecord record) =>
+    private static InvoiceSyncRow ToRow(InvoiceConfiguration configuration, InvoiceRecord record, bool isMostRecent) =>
         new(
             configuration.Id,
             configuration.IntegrationType,
             configuration.InvoiceDescription,
             configuration.IsActive,
             record.ExpectedDate,
-            record.State);
+            record.State,
+            isMostRecent);
 
     internal static Option<DateOnly> ActualDate(InvoiceWorkflowState state) => state switch
     {
