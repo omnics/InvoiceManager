@@ -1154,6 +1154,91 @@ public sealed class DueInvoiceProcessorTests
     }
 
     [Fact]
+    public async Task ProcessDueAsync_UsesTheExistingInterventionsOwnBill_WhenADuplicateInterventionIsFoundForTheSameRecord()
+    {
+        // A concurrent run (the HTTP-triggered and timer-triggered processors can overlap on the
+        // same due record) already created a pending intervention for this record before this run
+        // got to CreateFreeAgentInterventionAsync's duplicate guard. This run's own matching pass
+        // found a different bill (FreeAgent's bill data can change between the two overlapping
+        // calls) - the resulting FreeAgentInterventionPending must describe the intervention that
+        // actually exists (existing.Bill/existing.Id), not this run's own (now-stale) details.Bill,
+        // otherwise the record would point at one bill while the intervention it's "pending" on
+        // was raised against another.
+        var matching = new FreeAgentBillMatching(
+            new FreeAgentContact(new FreeAgentContactIdentity("https://api.sandbox.freeagent.com/v2/contacts/1"), "Test Contact"),
+            DateReconciliation: new FreeAgentDateReconciliation(0),
+            AmountReconciliation: Option.None);
+        var config = Configurations.Build(startDate: new DateOnly(2025, 7, 10), freeAgentMatching: matching);
+        var actualDetails = Actuals.Build(
+            new DateOnly(2025, 7, 12), new Money(10.00m, "GBP"), new SourceInvoiceId("G152207778"));
+        var oneDriveDetails = new OneDriveDetails(
+            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item");
+        var matchedBill = new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1");
+        var existingInterventionBill = new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/2");
+        var item = new FreeAgentBillItemIdentity("https://api.sandbox.freeagent.com/v2/bills/1/items/1");
+        var erroredRecord = Records.Build(
+            config,
+            expectedDate: new DateOnly(2025, 7, 10),
+            state: new FreeAgentError(
+                actualDetails, oneDriveDetails, "earlier verification failure",
+                new FreeAgentErrorBillContext(matchedBill, Option.None)));
+        var records = new InMemoryInvoiceRecordRepository(erroredRecord);
+
+        var interventions = new InMemoryFreeAgentInterventionRepository();
+        var existingIntervention = FreeAgentGuessIntervention.Create(
+            new FreeAgentInterventionId("freeagent-intervention-existing"),
+            erroredRecord.Id,
+            new FreeAgentPaymentInterventionDetails(
+                existingInterventionBill, item, "https://api.sandbox.freeagent.com/v2/bank_transactions/2",
+                "https://api.sandbox.freeagent.com/v2/bank_transaction_explanations/2",
+                new Money(10.00m, "GBP"), actualDetails.ActualAmount, "Blocking Bill Payment explanation (concurrent run)."),
+            Today.ToDateTime(TimeOnly.MinValue));
+        await interventions.CreateAsync(existingIntervention);
+
+        var bill = new FreeAgentBillSnapshot(
+            matchedBill, FreeAgentBillStatus.Open, actualDetails.ActualInvoiceDate.AddDays(1), actualDetails.ActualInvoiceDate.AddDays(30),
+            actualDetails.ActualAmount, new Money(0m, "GBP"), actualDetails.ActualAmount, Option.None,
+            matching.Contact.Url, "REF-1", [], Option.None);
+        var matcher = new FakeFreeAgentBillMatcher { Result = new FreeAgentBillFound(bill) };
+        var interventionDetails = new FreeAgentPaymentInterventionDetails(
+            matchedBill, item, "https://api.sandbox.freeagent.com/v2/bank_transactions/1",
+            "https://api.sandbox.freeagent.com/v2/bank_transaction_explanations/1",
+            new Money(10.00m, "GBP"), actualDetails.ActualAmount, "Blocking Bill Payment explanation.");
+        var reconciler = new FakeFreeAgentBillReconciler
+        {
+            DateReconciliation = (_, _) => new FreeAgentPaymentInterventionRequired(interventionDetails),
+        };
+        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch("test diagnostic"));
+        var oneDrive = new FakeOneDriveIntegration { DownloadResult = [1, 2, 3] };
+
+        var processor = new DueInvoiceProcessor(
+            records,
+            new FakeConfigurationRepository(config),
+            [source],
+            oneDrive,
+            BuildFilename(),
+            matcher,
+            reconciler,
+            new FakeFreeAgentAttachmentUploader(),
+            interventions,
+            new FixedTimeProvider(Today),
+            NullLogger<DueInvoiceProcessor>.Instance);
+
+        var results = await processor.ProcessDueAsync();
+
+        Assert.True(Assert.Single(results) is ProcessingFreeAgentInterventionRequired);
+        var stored = records.All.Single(r => r.Id == erroredRecord.Id);
+        if (stored.State is not FreeAgentInterventionPending pending)
+        {
+            Assert.Fail($"Expected FreeAgentInterventionPending but was {stored.State}.");
+            return;
+        }
+
+        Assert.Equal(existingInterventionBill, pending.Bill);
+        Assert.Equal(existingIntervention.Id, pending.InterventionId);
+    }
+
+    [Fact]
     public async Task ProcessDueAsync_PassesPersistedAttemptedAttachment_SoARetryCanRecogniseItsPriorAttachment()
     {
         // A prior run's attachment upload actually succeeded on FreeAgent's side, but the

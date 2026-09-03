@@ -617,7 +617,11 @@ public sealed class DueInvoiceProcessor(
     {
         // Guard against creating a duplicate when a concurrent run (the HTTP-triggered and
         // timer-triggered processors can overlap on the same due record) already created one -
-        // not fully atomic against the same race, but catches the common case.
+        // not fully atomic against the same race, but catches the common case. Uses the existing
+        // intervention's own Bill, not this run's details.Bill - a concurrent run's own matching
+        // pass could disagree on which bill this invoice belongs to (or FreeAgent's bill data
+        // could simply have changed between the two), and existing.Id/existing.Bill are the pair
+        // that's actually true of the intervention this record is now pending against.
         if (await freeAgentInterventionRepository.HasPendingInterventionAsync(record.Id, cancellationToken))
         {
             var pendingInterventions = await freeAgentInterventionRepository.ListPendingAsync(cancellationToken);
@@ -625,7 +629,7 @@ public sealed class DueInvoiceProcessor(
             {
                 var alreadyPending = record with
                 {
-                    State = new FreeAgentInterventionPending(actualDetails, oneDriveDetails, details.Bill, existing.Id, lastKnownAttachment),
+                    State = new FreeAgentInterventionPending(actualDetails, oneDriveDetails, existing.Bill, existing.Id, lastKnownAttachment),
                 };
                 await recordRepository.ReplaceAsync(alreadyPending, cancellationToken);
                 return new ProcessingFreeAgentInterventionRequired(record.Id, existing.Id);
