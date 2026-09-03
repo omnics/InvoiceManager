@@ -113,6 +113,9 @@ stateDiagram-v2
         administrator records a decision against the pending
         FreeAgentGuessIntervention (via IFreeAgentInterventionRepository),
         which then resumes reconciliation directly. Always carries the
-        matched bill's identity - reached only after FreeAgentBillMatched.
+        matched bill's identity - reached only after FreeAgentBillMatched -
+        plus any proof of an earlier successful upload to that same bill, so
+        a same-bill retry that reaches an intervention doesn't lose track of
+        it.
     end note
 ```

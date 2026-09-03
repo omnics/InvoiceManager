@@ -149,8 +149,10 @@ internal sealed class InvoiceRecordDocument
     [JsonPropertyName("freeAgentBillUrl")]
     public string? FreeAgentBillUrl { get; init; }
 
-    // Present only for FreeAgentAttached: the verified attachment metadata, used to
-    // decide whether a later retry's upload is already correct.
+    // Present for FreeAgentAttached (verified attachment metadata, used to decide
+    // whether a later retry's upload is already correct), and optionally for
+    // FreeAgentError/FreeAgentInterventionPending (proof of an earlier successful
+    // upload to the same bill, carried through so a retry doesn't lose it).
     [JsonPropertyName("freeAgentAttachment")]
     public FreeAgentAttachmentMetadataDocument? FreeAgentAttachment { get; init; }
 
@@ -211,7 +213,8 @@ internal sealed class InvoiceRecordDocument
         nameof(FreeAgentAttached) => new FreeAgentAttached(
             RequiredActualDetails(), RequiredOneDriveDetails(), RequiredFreeAgentBillIdentity(), RequiredFreeAgentAttachment()),
         nameof(FreeAgentInterventionPending) => new FreeAgentInterventionPending(
-            RequiredActualDetails(), RequiredOneDriveDetails(), RequiredFreeAgentBillIdentity(), RequiredFreeAgentInterventionId()),
+            RequiredActualDetails(), RequiredOneDriveDetails(), RequiredFreeAgentBillIdentity(), RequiredFreeAgentInterventionId(),
+            FreeAgentAttachment is { } pendingAttachment ? pendingAttachment.ToMetadata() : Option.None),
         nameof(FreeAgentError) => new FreeAgentError(
             RequiredActualDetails(), RequiredOneDriveDetails(), LastError ?? string.Empty,
             FreeAgentBillUrl is { } billUrl
@@ -330,6 +333,9 @@ internal sealed class InvoiceRecordDocument
             OneDriveDetails = OneDriveDetailsDocument.FromDetails(pending.OneDriveDetails),
             FreeAgentBillUrl = pending.Bill.Url.OriginalString,
             FreeAgentInterventionId = pending.InterventionId.Value,
+            FreeAgentAttachment = pending.AttemptedAttachment is FreeAgentAttachmentMetadata pendingAttachment
+                ? FreeAgentAttachmentMetadataDocument.FromMetadata(pendingAttachment)
+                : null,
         },
         FreeAgentError freeAgentError => new()
         {

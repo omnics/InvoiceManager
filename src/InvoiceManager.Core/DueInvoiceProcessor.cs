@@ -429,7 +429,7 @@ public sealed class DueInvoiceProcessor(
                 {
                     const string reason =
                         "FreeAgent bill amount does not match the invoice and the bill does not have exactly one item to reconcile.";
-                    await MarkFreeAgentErrorAsync(matchedRecord, actualDetails, oneDriveDetails, reason, Option.None, cancellationToken);
+                    await MarkFreeAgentErrorAsync(matchedRecord, actualDetails, oneDriveDetails, reason, lastKnownAttachment, cancellationToken);
                     return new ProcessingFreeAgentConflict(matchedRecord.Id, reason);
                 }
 
@@ -452,7 +452,7 @@ public sealed class DueInvoiceProcessor(
                 {
                     const string reason =
                         "FreeAgent accepted the item amount change but the bill's aggregate total still does not match the invoice.";
-                    await MarkFreeAgentErrorAsync(matchedRecord, actualDetails, oneDriveDetails, reason, Option.None, cancellationToken);
+                    await MarkFreeAgentErrorAsync(matchedRecord, actualDetails, oneDriveDetails, reason, lastKnownAttachment, cancellationToken);
                     return new ProcessingFreeAgentConflict(matchedRecord.Id, reason);
                 }
             }
@@ -506,7 +506,7 @@ public sealed class DueInvoiceProcessor(
                 case FreeAgentBillLocked locked:
                     {
                         var reason = $"FreeAgent bill locked: {locked.Reason}.";
-                        await MarkFreeAgentErrorAsync(reconciledRecord, actualDetails, oneDriveDetails, reason, Option.None, cancellationToken);
+                        await MarkFreeAgentErrorAsync(reconciledRecord, actualDetails, oneDriveDetails, reason, lastKnownAttachment, cancellationToken);
                         return new ProcessingFreeAgentConflict(reconciledRecord.Id, reason);
                     }
                 case FreeAgentVerificationFailed verificationFailed:
@@ -581,7 +581,7 @@ public sealed class DueInvoiceProcessor(
             case FreeAgentPaymentInterventionRequired interventionRequired:
                 {
                     var interventionOutcome = await CreateFreeAgentInterventionAsync(
-                        matchedRecord, actualDetails, oneDriveDetails, interventionRequired.Intervention, cancellationToken);
+                        matchedRecord, actualDetails, oneDriveDetails, interventionRequired.Intervention, lastKnownAttachment, cancellationToken);
                     return interventionOutcome;
                 }
             case FreeAgentVerificationFailed verificationFailed:
@@ -612,6 +612,7 @@ public sealed class DueInvoiceProcessor(
         ActualInvoiceDetails actualDetails,
         OneDriveDetails oneDriveDetails,
         FreeAgentPaymentInterventionDetails details,
+        Option<FreeAgentAttachmentMetadata> lastKnownAttachment,
         CancellationToken cancellationToken)
     {
         // Guard against creating a duplicate when a concurrent run (the HTTP-triggered and
@@ -624,7 +625,7 @@ public sealed class DueInvoiceProcessor(
             {
                 var alreadyPending = record with
                 {
-                    State = new FreeAgentInterventionPending(actualDetails, oneDriveDetails, details.Bill, existing.Id),
+                    State = new FreeAgentInterventionPending(actualDetails, oneDriveDetails, details.Bill, existing.Id, lastKnownAttachment),
                 };
                 await recordRepository.ReplaceAsync(alreadyPending, cancellationToken);
                 return new ProcessingFreeAgentInterventionRequired(record.Id, existing.Id);
@@ -637,7 +638,7 @@ public sealed class DueInvoiceProcessor(
 
         var pending = record with
         {
-            State = new FreeAgentInterventionPending(actualDetails, oneDriveDetails, details.Bill, interventionId),
+            State = new FreeAgentInterventionPending(actualDetails, oneDriveDetails, details.Bill, interventionId, lastKnownAttachment),
         };
         await recordRepository.ReplaceAsync(pending, cancellationToken);
         logger.LogWarning(

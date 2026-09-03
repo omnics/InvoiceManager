@@ -110,13 +110,34 @@ public sealed class InvoiceRecordDocumentTests
     }
 
     [Fact]
-    public void RoundTrip_PreservesRecord_WhenStateIsFreeAgentInterventionPending()
+    public void RoundTrip_PreservesRecord_WhenStateIsFreeAgentInterventionPending_WithNoAttemptedAttachment()
     {
         var record = BuildRecord(new FreeAgentInterventionPending(
             SampleActualDetails,
             new OneDriveDetails(OneDriveLocation, DriveId, ItemId),
             new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1"),
-            new FreeAgentInterventionId("intervention-1")));
+            new FreeAgentInterventionId("intervention-1"),
+            Option.None));
+
+        var roundTripped = InvoiceRecordDocument.FromRecord(record).ToRecord();
+
+        Assert.Equal(record, roundTripped);
+    }
+
+    [Fact]
+    public void RoundTrip_PreservesRecord_WhenStateIsFreeAgentInterventionPending_WithAttemptedAttachment()
+    {
+        // A prior run's amount reconciliation succeeded and uploaded the attachment before this
+        // (or an earlier) run hit a payment intervention - that upload proof must survive so a
+        // later decision-then-retry doesn't re-upload or lose track of it.
+        var record = BuildRecord(new FreeAgentInterventionPending(
+            SampleActualDetails,
+            new OneDriveDetails(OneDriveLocation, DriveId, ItemId),
+            new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1"),
+            new FreeAgentInterventionId("intervention-1"),
+            new FreeAgentAttachmentMetadata(
+                "2025-07-05 Test Invoice G152207778 £9.99 exc.pdf", 1024, "application/pdf",
+                new DateTimeOffset(2025, 7, 6, 8, 30, 0, TimeSpan.Zero))));
 
         var roundTripped = InvoiceRecordDocument.FromRecord(record).ToRecord();
 

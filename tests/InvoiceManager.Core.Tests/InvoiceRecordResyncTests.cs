@@ -177,7 +177,8 @@ public sealed class InvoiceRecordResyncTests
             Actuals.Build(new DateOnly(2025, 7, 5)),
             OneDrive,
             new FreeAgentBillIdentity("https://api.freeagent.com/v2/bills/1"),
-            interventionId);
+            interventionId,
+            Option.None);
 
     private static FreeAgentGuessIntervention BuildIntervention(FreeAgentInterventionId id, InvoiceRecordId recordId) =>
         new(

@@ -107,11 +107,18 @@ public sealed record FreeAgentAttached(
 /// not retried automatically - until a decision is recorded against
 /// <see cref="InterventionId"/> and a later run re-attempts reconciliation.
 /// </summary>
+/// <param name="AttemptedAttachment">
+/// Proof of an attachment this or an earlier run genuinely POSTed to <see cref="Bill"/>, carried
+/// over so a decision-then-retry that rematches the same bill doesn't lose it - mirrors
+/// <see cref="FreeAgentErrorBillContext.AttemptedAttachment"/>, but doesn't need its own union
+/// with the bill since <see cref="Bill"/> here is already required and singular.
+/// </param>
 public sealed record FreeAgentInterventionPending(
     ActualInvoiceDetails ActualDetails,
     OneDriveDetails OneDriveDetails,
     FreeAgentBillIdentity Bill,
-    FreeAgentInterventionId InterventionId);
+    FreeAgentInterventionId InterventionId,
+    Option<FreeAgentAttachmentMetadata> AttemptedAttachment);
 
 /// <summary>
 /// What matching had already established about the bill by the time a <see cref="FreeAgentError"/>

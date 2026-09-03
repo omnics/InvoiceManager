@@ -200,7 +200,7 @@ public sealed class InvoiceSyncOverviewTests
             nameof(RetrievalError) => new RetrievalError("transient failure"),
             nameof(FreeAgentError) => new FreeAgentError(actualDetails, oneDrive, "reconciliation failed", Option.None),
             nameof(FreeAgentInterventionPending) => new FreeAgentInterventionPending(
-                actualDetails, oneDrive, bill, new FreeAgentInterventionId("intervention-1")),
+                actualDetails, oneDrive, bill, new FreeAgentInterventionId("intervention-1"), Option.None),
             nameof(Expected) => new Expected(Option.None),
             nameof(Retrieved) => new Retrieved(actualDetails),
             nameof(FreeAgentMatchExpected) => new FreeAgentMatchExpected(actualDetails, oneDrive, Option.None),
@@ -364,7 +364,7 @@ public sealed class InvoiceSyncOverviewTests
         {
             nameof(RetrievalError) => new RetrievalError("transient failure"),
             nameof(FreeAgentInterventionPending) => new FreeAgentInterventionPending(
-                Actuals.Build(), oneDrive, new Integrations.FreeAgent.FreeAgentBillIdentity("https://api.freeagent.com/v2/bills/1"), new FreeAgentInterventionId("intervention-1")),
+                Actuals.Build(), oneDrive, new Integrations.FreeAgent.FreeAgentBillIdentity("https://api.freeagent.com/v2/bills/1"), new FreeAgentInterventionId("intervention-1"), Option.None),
             _ => throw new ArgumentOutOfRangeException(nameof(stateType), stateType, "Unhandled state type in test."),
         };
         var config = Configurations.Build(id: new InvoiceConfigurationId("acme"));
