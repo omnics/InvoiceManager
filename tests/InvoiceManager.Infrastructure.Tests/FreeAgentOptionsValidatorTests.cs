@@ -54,6 +54,8 @@ public sealed class FreeAgentOptionsValidatorTests
     [InlineData("-")] // Bare hyphen.
     [InlineData("-acme")] // Leading hyphen.
     [InlineData("acme-")] // Trailing hyphen.
+    [InlineData("acmeltd\n")] // Trailing newline - $ matches before it, \z (used here) does not.
+    [InlineData("acmeltd\r\n")]
     public void Validate_Fails_WhenSubdomainIsNotAValidDnsLabel(string subdomain)
     {
         var validator = new FreeAgentOptionsValidator();

@@ -75,7 +75,10 @@
                                     <details class="row-actions" name="row-actions">
                                         <summary aria-label="Actions for @row.DisplayName"></summary>
                                         <div class="row-actions-panel">
-                                            <a class="row-action-item" asp-page="/Configurations/Edit" asp-route-id="@row.ConfigurationId.Value" asp-route-integrationType="@row.IntegrationType">Edit configuration</a>
+                                            @if (Model.HasWorkflowAuthorization)
+                                            {
+                                                <a class="row-action-item" asp-page="/Configurations/Edit" asp-route-id="@row.ConfigurationId.Value" asp-route-integrationType="@row.IntegrationType">Edit configuration</a>
+                                            }
                                             @if (row.OneDrive is OneDriveDetails oneDrive)
                                             {
                                                 @if (Model.IsHttpsUrl(oneDrive.OneDriveLocation))

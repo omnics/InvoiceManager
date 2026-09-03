@@ -55,6 +55,8 @@ public sealed partial class FreeAgentOptionsValidator : IValidateOptions<FreeAge
     // A single DNS label (RFC 1035): 1-63 characters, alphanumeric first/last, hyphens only
     // internally - anything looser (a bare "-", a leading/trailing hyphen, over 63 characters)
     // is not a real hostname component, even though Uri itself would accept some of these.
-    [GeneratedRegex("^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$")]
+    // \A/\z (not ^/$) so a trailing newline can't sneak a value like "acmeltd\n" past this -
+    // $ matches before a final line terminator, \z only at the true end of the string.
+    [GeneratedRegex(@"\A[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\z")]
     private static partial Regex SubdomainPattern();
 }

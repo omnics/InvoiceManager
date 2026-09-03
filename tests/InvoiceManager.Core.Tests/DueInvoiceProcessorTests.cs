@@ -869,6 +869,78 @@ public sealed class DueInvoiceProcessorTests
     }
 
     [Fact]
+    public async Task ProcessDueAsync_PreservesSameBillUploadProof_WhenReconciliationReturnsATypedFailureAgain()
+    {
+        // The same guarantee as above, but for a typed reconciliation-result failure (bill
+        // locked) rather than a thrown exception - HandleReconciliationResultAsync must not
+        // discard proof of an earlier upload to this same bill just because this retry's
+        // reconciliation attempt was rejected rather than erroring outright.
+        var matching = new FreeAgentBillMatching(
+            new FreeAgentContact(new FreeAgentContactIdentity("https://api.sandbox.freeagent.com/v2/contacts/1"), "Test Contact"),
+            DateReconciliation: new FreeAgentDateReconciliation(0),
+            AmountReconciliation: Option.None);
+        var config = Configurations.Build(startDate: new DateOnly(2025, 7, 10), freeAgentMatching: matching);
+        var actualDetails = Actuals.Build(
+            new DateOnly(2025, 7, 12), new Money(10.00m, "GBP"), new SourceInvoiceId("G152207778"));
+        var oneDriveDetails = new OneDriveDetails(
+            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item");
+        var billIdentity = new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1");
+        var priorAttachment = new FreeAgentAttachmentMetadata(
+            "2025-07-12 Test Invoice G152207778 £10.00 exc.pdf", 3, "application/pdf", Today.ToDateTime(TimeOnly.MinValue));
+        var erroredRecord = Records.Build(
+            config,
+            expectedDate: new DateOnly(2025, 7, 10),
+            state: new FreeAgentError(
+                actualDetails, oneDriveDetails, "earlier verification failure",
+                new FreeAgentErrorBillContext(billIdentity, priorAttachment)));
+        var records = new InMemoryInvoiceRecordRepository(erroredRecord);
+
+        var bill = new FreeAgentBillSnapshot(
+            billIdentity, FreeAgentBillStatus.Open, actualDetails.ActualInvoiceDate.AddDays(1), actualDetails.ActualInvoiceDate.AddDays(30),
+            actualDetails.ActualAmount, new Money(0m, "GBP"), actualDetails.ActualAmount, Option.None,
+            matching.Contact.Url, "REF-1", [], Option.None);
+        var matcher = new FakeFreeAgentBillMatcher { Result = new FreeAgentBillFound(bill) };
+        var reconciler = new FakeFreeAgentBillReconciler
+        {
+            DateReconciliation = (_, _) => new FreeAgentBillLocked(FreeAgentLockReason.Unknown),
+        };
+        var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch("test diagnostic"));
+        var oneDrive = new FakeOneDriveIntegration { DownloadResult = [1, 2, 3] };
+
+        var processor = new DueInvoiceProcessor(
+            records,
+            new FakeConfigurationRepository(config),
+            [source],
+            oneDrive,
+            BuildFilename(),
+            matcher,
+            reconciler,
+            new FakeFreeAgentAttachmentUploader(),
+            new InMemoryFreeAgentInterventionRepository(),
+            new FixedTimeProvider(Today),
+            NullLogger<DueInvoiceProcessor>.Instance);
+
+        var results = await processor.ProcessDueAsync();
+
+        Assert.True(Assert.Single(results) is ProcessingFreeAgentConflict);
+        var stored = records.All.Single(r => r.Id == erroredRecord.Id);
+        if (stored.State is not FreeAgentError error)
+        {
+            Assert.Fail($"Expected FreeAgentError but was {stored.State}.");
+            return;
+        }
+
+        if (error.BillContext is not FreeAgentErrorBillContext context)
+        {
+            Assert.Fail("Expected BillContext to preserve the prior same-bill proof despite this run's rejected reconciliation.");
+            return;
+        }
+
+        Assert.Equal(billIdentity, context.Bill);
+        Assert.True(context.AttemptedAttachment is FreeAgentAttachmentMetadata attachment && attachment == priorAttachment);
+    }
+
+    [Fact]
     public async Task ProcessDueAsync_PassesPersistedAttemptedAttachment_SoARetryCanRecogniseItsPriorAttachment()
     {
         // A prior run's attachment upload actually succeeded on FreeAgent's side, but the
