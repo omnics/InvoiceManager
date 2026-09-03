@@ -213,6 +213,10 @@ public sealed class InvoiceSyncOverview(
         FreeAgentBillMatched matched => matched.Bill,
         FreeAgentBillReconciled reconciledBill => reconciledBill.Bill,
         FreeAgentAttached attached => attached.Bill,
+        // The upload itself succeeded before this run errored (on read-back verification or a
+        // later persistence step) - the bill it uploaded to is still worth surfacing even though
+        // the record needs attention.
+        FreeAgentError { AttemptedAttachment: FreeAgentAttemptedAttachment attempted } => attempted.Bill,
         _ => Option.None,
     };
 }

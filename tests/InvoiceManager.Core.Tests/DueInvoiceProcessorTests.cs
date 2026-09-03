@@ -386,7 +386,7 @@ public sealed class DueInvoiceProcessorTests
         var oneDrive = new FakeOneDriveIntegration
         {
             NextSearchResult = new OneDriveMatch(
-                new OneDriveDetails("/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item", Option.None),
+                new OneDriveDetails("/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item"),
                 Actuals.Build(new DateOnly(2025, 7, 12), new Money(10.00m, "GBP"), new SourceInvoiceId("G152207778")),
                 "matched by date and amount"),
         };
@@ -550,7 +550,7 @@ public sealed class DueInvoiceProcessorTests
         var records = new InMemoryInvoiceRecordRepository(dueRecord);
 
         var oneDriveDetails = new OneDriveDetails(
-            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item", Option.None);
+            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item");
         var oneDrive = new FakeOneDriveIntegration
         {
             NextSearchResult = new OneDriveMatch(
@@ -598,7 +598,7 @@ public sealed class DueInvoiceProcessorTests
         var actualDetails = Actuals.Build(
             new DateOnly(2025, 7, 12), new Money(10.00m, "GBP"), new SourceInvoiceId("G152207778"));
         var oneDriveDetails = new OneDriveDetails(
-            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item", Option.None);
+            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item");
         var matchExpectedRecord = Records.Build(
             config,
             expectedDate: new DateOnly(2025, 7, 10),
@@ -652,7 +652,7 @@ public sealed class DueInvoiceProcessorTests
         var actualDetails = Actuals.Build(
             new DateOnly(2025, 7, 12), new Money(10.00m, "GBP"), new SourceInvoiceId("G152207778"));
         var oneDriveDetails = new OneDriveDetails(
-            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item", Option.None);
+            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item");
         var erroredRecord = Records.Build(
             config,
             expectedDate: new DateOnly(2025, 7, 10),
@@ -696,7 +696,7 @@ public sealed class DueInvoiceProcessorTests
         var actualDetails = Actuals.Build(
             new DateOnly(2025, 7, 12), new Money(10.00m, "GBP"), new SourceInvoiceId("G152207778"));
         var oneDriveDetails = new OneDriveDetails(
-            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item", Option.None);
+            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item");
         var matchExpectedRecord = Records.Build(
             config,
             expectedDate: new DateOnly(2025, 7, 10),
@@ -750,7 +750,7 @@ public sealed class DueInvoiceProcessorTests
         var actualDetails = Actuals.Build(
             new DateOnly(2025, 7, 12), new Money(10.00m, "GBP"), new SourceInvoiceId("G152207778"));
         var oneDriveDetails = new OneDriveDetails(
-            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item", Option.None);
+            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item");
         var matchExpectedRecord = Records.Build(
             config,
             expectedDate: new DateOnly(2025, 7, 10),
@@ -811,7 +811,7 @@ public sealed class DueInvoiceProcessorTests
         var actualDetails = Actuals.Build(
             new DateOnly(2025, 7, 12), new Money(10.00m, "GBP"), new SourceInvoiceId("G152207778"));
         var oneDriveDetails = new OneDriveDetails(
-            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item", Option.None);
+            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item");
         var billIdentity = new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1");
         var priorAttachment = new FreeAgentAttachmentMetadata(
             "2025-07-12 Test Invoice G152207778 £10.00 exc.pdf", 3, "application/pdf", Today.ToDateTime(TimeOnly.MinValue));
@@ -885,7 +885,7 @@ public sealed class DueInvoiceProcessorTests
         var actualDetails = Actuals.Build(
             new DateOnly(2025, 7, 12), new Money(10.00m, "GBP"), new SourceInvoiceId("G152207778"));
         var oneDriveDetails = new OneDriveDetails(
-            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item", Option.None);
+            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item");
         var billIdentity = new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1");
         var attemptedAttachment = new FreeAgentAttachmentMetadata(
             "2025-07-12 Test Invoice G152207778 £10.00 exc.pdf", 3, "application/pdf", Today.ToDateTime(TimeOnly.MinValue));
@@ -950,7 +950,7 @@ public sealed class DueInvoiceProcessorTests
         var actualDetails = Actuals.Build(
             new DateOnly(2025, 7, 12), new Money(10.00m, "GBP"), new SourceInvoiceId("G152207778"));
         var oneDriveDetails = new OneDriveDetails(
-            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item", Option.None);
+            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item");
         var originalBillIdentity = new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1");
         var attemptedAttachment = new FreeAgentAttachmentMetadata(
             "2025-07-12 Test Invoice G152207778 £10.00 exc.pdf", 3, "application/pdf", Today.ToDateTime(TimeOnly.MinValue));
@@ -1008,7 +1008,7 @@ public sealed class DueInvoiceProcessorTests
         var actualDetails = Actuals.Build(
             new DateOnly(2025, 7, 12), new Money(10.00m, "GBP"), new SourceInvoiceId("G152207778"));
         var oneDriveDetails = new OneDriveDetails(
-            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item", Option.None);
+            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item");
         var matchExpectedRecord = Records.Build(
             config,
             expectedDate: new DateOnly(2025, 7, 10),
@@ -1076,7 +1076,7 @@ public sealed class DueInvoiceProcessorTests
         var actualDetails = Actuals.Build(
             new DateOnly(2025, 7, 12), new Money(10.00m, "GBP"), new SourceInvoiceId("G152207778"));
         var oneDriveDetails = new OneDriveDetails(
-            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item", Option.None);
+            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item");
         var erroredRecord = Records.Build(
             config,
             expectedDate: new DateOnly(2025, 7, 10),

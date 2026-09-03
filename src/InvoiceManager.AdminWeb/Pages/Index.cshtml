@@ -84,7 +84,7 @@
                                                     {
                                                         <a class="row-action-item" href="@oneDrive.OneDriveLocation">Open file</a>
                                                     }
-                                                    @if (oneDrive.FolderLocation is string folderLocation && Model.IsHttpsUrl(folderLocation))
+                                                    @if (Model.DeriveOneDriveFolderUrl(oneDrive.OneDriveLocation) is string folderLocation)
                                                     {
                                                         <a class="row-action-item" href="@folderLocation">Open folder</a>
                                                     }

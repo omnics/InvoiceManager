@@ -75,7 +75,7 @@ public sealed class IndexPageTests
             expectedDate: new DateOnly(2025, 6, 1),
             state: new SavedToOneDrive(
                 Actuals.Build(new DateOnly(2025, 6, 1)),
-                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item", Option.None)));
+                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item")));
         var current = Records.Build(
             config, expectedDate: new DateOnly(2025, 7, 1), state: new RetrievalError("transient failure"));
         var records = new InMemoryInvoiceRecordRepository(completed, current);
@@ -141,6 +141,34 @@ public sealed class IndexPageTests
         var model = CreateIndexModel();
 
         Assert.Equal(expected, model.IsHttpsUrl(location));
+    }
+
+    [Fact]
+    public void DeriveOneDriveFolderUrl_TrimsTheFileNameOffARealWebUrl_ToGetTheContainingFolder()
+    {
+        // Graph's parentReference (an itemReference) has no webUrl property at all, so the
+        // folder link has to be derived from the file's own webUrl - a literal server-relative
+        // path under the document library for both OneDrive and SharePoint.
+        var model = CreateIndexModel();
+        const string fileUrl =
+            "https://omnics-my.sharepoint.com/personal/joshua_omnics_tech/Documents/Test/Bills/" +
+            "Azure%20+%20Visual%20Studio/2026-06-09%20G164045971%20%C2%A340.01%20inc.pdf";
+
+        Assert.Equal(
+            "https://omnics-my.sharepoint.com/personal/joshua_omnics_tech/Documents/Test/Bills/" +
+            "Azure%20+%20Visual%20Studio",
+            model.DeriveOneDriveFolderUrl(fileUrl));
+    }
+
+    [Theory]
+    [InlineData("http://example.com/Bills/file.pdf")] // Not https.
+    [InlineData("01ABCDEF")] // OneDriveLocation's bare-item-ID fallback when Graph reports no webUrl.
+    [InlineData("https://example.com")] // No path at all - nothing to trim to.
+    public void DeriveOneDriveFolderUrl_ReturnsNull_WhenThereIsNoUsableFolderPathToTrimTo(string fileLocation)
+    {
+        var model = CreateIndexModel();
+
+        Assert.Null(model.DeriveOneDriveFolderUrl(fileLocation));
     }
 
     [Fact]

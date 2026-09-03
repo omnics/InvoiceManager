@@ -62,7 +62,7 @@ public sealed class InvoiceRecordDocumentTests
     {
         var record = BuildRecord(new ReconciledFromOneDrive(
             SampleActualDetails,
-            new OneDriveDetails(OneDriveLocation, DriveId, ItemId, Option.None),
+            new OneDriveDetails(OneDriveLocation, DriveId, ItemId),
             "matched by date and amount",
             new DateTimeOffset(2025, 7, 6, 8, 30, 0, TimeSpan.Zero)));
 
@@ -76,19 +76,7 @@ public sealed class InvoiceRecordDocumentTests
     {
         var record = BuildRecord(new SavedToOneDrive(
             SampleActualDetails,
-            new OneDriveDetails(OneDriveLocation, DriveId, ItemId, Option.None)));
-
-        var roundTripped = InvoiceRecordDocument.FromRecord(record).ToRecord();
-
-        Assert.Equal(record, roundTripped);
-    }
-
-    [Fact]
-    public void RoundTrip_PreservesRecord_WhenOneDriveDetailsHasAFolderLocation()
-    {
-        var record = BuildRecord(new SavedToOneDrive(
-            SampleActualDetails,
-            new OneDriveDetails(OneDriveLocation, DriveId, ItemId, "/drives/test/root:/Bills/Test")));
+            new OneDriveDetails(OneDriveLocation, DriveId, ItemId)));
 
         var roundTripped = InvoiceRecordDocument.FromRecord(record).ToRecord();
 
@@ -100,7 +88,7 @@ public sealed class InvoiceRecordDocumentTests
     {
         var record = BuildRecord(new FreeAgentMatchExpected(
             SampleActualDetails,
-            new OneDriveDetails(OneDriveLocation, DriveId, ItemId, Option.None),
+            new OneDriveDetails(OneDriveLocation, DriveId, ItemId),
             Option.None));
 
         var roundTripped = InvoiceRecordDocument.FromRecord(record).ToRecord();
@@ -113,7 +101,7 @@ public sealed class InvoiceRecordDocumentTests
     {
         var record = BuildRecord(new FreeAgentMatchExpected(
             SampleActualDetails,
-            new OneDriveDetails(OneDriveLocation, DriveId, ItemId, Option.None),
+            new OneDriveDetails(OneDriveLocation, DriveId, ItemId),
             "No FreeAgent bill found in the date window."));
 
         var roundTripped = InvoiceRecordDocument.FromRecord(record).ToRecord();
@@ -126,7 +114,7 @@ public sealed class InvoiceRecordDocumentTests
     {
         var record = BuildRecord(new FreeAgentError(
             SampleActualDetails,
-            new OneDriveDetails(OneDriveLocation, DriveId, ItemId, Option.None),
+            new OneDriveDetails(OneDriveLocation, DriveId, ItemId),
             "FreeAgent bill locked",
             Option.None));
 
@@ -140,7 +128,7 @@ public sealed class InvoiceRecordDocumentTests
     {
         var record = BuildRecord(new FreeAgentError(
             SampleActualDetails,
-            new OneDriveDetails(OneDriveLocation, DriveId, ItemId, Option.None),
+            new OneDriveDetails(OneDriveLocation, DriveId, ItemId),
             "verification failed on the prior attempt",
             new FreeAgentAttemptedAttachment(
                 new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1"),
@@ -206,46 +194,6 @@ public sealed class InvoiceRecordDocumentTests
         Assert.Equal(
             "Invoice record document 'config-1_2025-07-01' has unrecognised status 'Teleported'.",
             ex.Message);
-    }
-
-    [Fact]
-    public void Deserialize_LeavesFolderLocationAbsent_ForADocumentWrittenBeforeThatFieldExisted()
-    {
-        // Simulates a Cosmos document saved before folderLocation was added: the JSON simply
-        // has no such key at all (not an explicit null), which is what an old record actually
-        // looks like - not just what the C# default would produce.
-        const string json = """
-            {
-              "id": "config-1_2025-07-01",
-              "configurationId": "config-1",
-              "expectedDate": "2025-07-01",
-              "processingSnapshot": {
-                "integrationType": "MicrosoftBilling",
-                "integrationConfiguration": { "type": "microsoftBilling", "billingAccountId": "billing-id" },
-                "oneDriveFolder": { "driveId": "d", "driveName": "Drive", "folderItemId": "f", "folderPath": "/Bills" },
-                "invoiceDescription": "Test Invoice",
-                "dateToleranceDays": 5,
-                "vatMode": "Exclusive"
-              },
-              "status": "SavedToOneDrive",
-              "actualInvoiceDetails": {
-                "actualInvoiceDate": "2025-07-05",
-                "actualAmount": 9.99,
-                "actualCurrency": "GBP",
-                "sourceInvoiceId": "G152207778"
-              },
-              "oneDriveDetails": {
-                "oneDriveLocation": "/drives/test/root:/Bills/Test/invoice.pdf",
-                "driveId": "test-drive",
-                "itemId": "invoice-item"
-              }
-            }
-            """;
-
-        var document = JsonSerializer.Deserialize<InvoiceRecordDocument>(json)!;
-        var record = document.ToRecord();
-
-        Assert.True(record.State is SavedToOneDrive saved && saved.OneDriveDetails.FolderLocation is None);
     }
 
     [Fact]

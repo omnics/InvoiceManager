@@ -39,7 +39,7 @@ public sealed class FakeOneDriveIntegration : IOneDriveIntegration
     {
         uploads.Add(request);
         return Task.FromResult(new OneDriveDetails(
-            $"{request.DestinationPath}/{request.FileName}", request.Destination.DriveId, request.FileName, Option.None));
+            $"{request.DestinationPath}/{request.FileName}", request.Destination.DriveId, request.FileName));
     }
 
     public Task<OneDriveSearchResult> SearchAsync(

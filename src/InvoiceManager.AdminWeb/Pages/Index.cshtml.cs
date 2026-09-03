@@ -126,6 +126,25 @@ public class IndexModel(
     public bool IsHttpsUrl(string location) =>
         Uri.TryCreate(location, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps;
 
+    /// <summary>
+    /// The containing folder's browsable OneDrive URL, or null if <paramref name="fileLocation"/>
+    /// isn't a usable https URL or has no path segment to trim. Microsoft Graph's
+    /// <c>itemReference</c> (what a driveItem's <c>parentReference</c> actually is) has no
+    /// <c>webUrl</c> property - https://learn.microsoft.com/graph/api/resources/itemreference -
+    /// so the only way to get the folder's link without an extra Graph call per file is to derive
+    /// it from the file's own webUrl, which is a literal server-relative path under the document
+    /// library for both OneDrive and SharePoint document libraries.
+    /// </summary>
+    public string? DeriveOneDriveFolderUrl(string fileLocation)
+    {
+        if (!IsHttpsUrl(fileLocation))
+            return null;
+
+        var lastSlash = fileLocation.LastIndexOf('/');
+        var schemeEnd = fileLocation.IndexOf("://", StringComparison.Ordinal) + 3;
+        return lastSlash > schemeEnd ? fileLocation[..lastSlash] : null;
+    }
+
     private void SetStatus(string message, bool isWarning)
     {
         TempData["StatusMessage"] = message;

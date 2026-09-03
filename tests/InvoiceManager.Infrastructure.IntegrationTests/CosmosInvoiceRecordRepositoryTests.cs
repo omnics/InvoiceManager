@@ -98,7 +98,7 @@ public sealed class CosmosInvoiceRecordRepositoryTests : IAsyncLifetime
             new DateOnly(2025, 6, 1),
             state: new SavedToOneDrive(
                 BuildActualDetails(),
-                new OneDriveDetails("/drives/test/root:/Bills/Test/completed.pdf", "test-drive", "completed-item", Option.None)));
+                new OneDriveDetails("/drives/test/root:/Bills/Test/completed.pdf", "test-drive", "completed-item")));
         var laterInProgress = BuildRecord(
             configurationId,
             new DateOnly(2025, 7, 1),
@@ -134,13 +134,13 @@ public sealed class CosmosInvoiceRecordRepositoryTests : IAsyncLifetime
             new DateOnly(2025, 4, 1),
             state: new SavedToOneDrive(
                 BuildActualDetails(),
-                new OneDriveDetails("/drives/test/root:/Bills/Test/saved.pdf", "test-drive", "saved-item", Option.None)));
+                new OneDriveDetails("/drives/test/root:/Bills/Test/saved.pdf", "test-drive", "saved-item")));
         var reconciledFromOneDrive = BuildRecord(
             configurationId,
             new DateOnly(2025, 5, 1),
             state: new ReconciledFromOneDrive(
                 BuildActualDetails(),
-                new OneDriveDetails("/drives/test/root:/Bills/Test/reconciled.pdf", "test-drive", "reconciled-item", Option.None),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/reconciled.pdf", "test-drive", "reconciled-item"),
                 "matched existing file",
                 DateTimeOffset.UtcNow));
         var freeAgentAttached = BuildRecord(
@@ -148,7 +148,7 @@ public sealed class CosmosInvoiceRecordRepositoryTests : IAsyncLifetime
             new DateOnly(2025, 6, 1),
             state: new FreeAgentAttached(
                 BuildActualDetails(),
-                new OneDriveDetails("/drives/test/root:/Bills/Test/attached.pdf", "test-drive", "attached-item", Option.None),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/attached.pdf", "test-drive", "attached-item"),
                 new FreeAgentBillIdentity("https://api.freeagent.com/v2/bills/1"),
                 new FreeAgentAttachmentMetadata(
                     "invoice.pdf", 1024, "application/pdf", DateTimeOffset.UtcNow)));
@@ -157,7 +157,7 @@ public sealed class CosmosInvoiceRecordRepositoryTests : IAsyncLifetime
             new DateOnly(2025, 7, 1),
             state: new FreeAgentMatchExpected(
                 BuildActualDetails(),
-                new OneDriveDetails("/drives/test/root:/Bills/Test/fa-match.pdf", "test-drive", "fa-match-item", Option.None),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/fa-match.pdf", "test-drive", "fa-match-item"),
                 Option.None));
         var stuckAugust = BuildRecord(
             configurationId,
@@ -213,20 +213,20 @@ public sealed class CosmosInvoiceRecordRepositoryTests : IAsyncLifetime
             new DateOnly(2025, 7, 6),
             state: new SavedToOneDrive(
                 BuildActualDetails(),
-                new OneDriveDetails("/drives/test/root:/Bills/Test/saved.pdf", "test-drive", "saved-item", Option.None)));
+                new OneDriveDetails("/drives/test/root:/Bills/Test/saved.pdf", "test-drive", "saved-item")));
         var freeAgentMatchExpectedDue = BuildRecord(
             new InvoiceConfigurationId("freeagent-match-expected-due"),
             new DateOnly(2025, 7, 7),
             state: new FreeAgentMatchExpected(
                 BuildActualDetails(),
-                new OneDriveDetails("/drives/test/root:/Bills/Test/fa-match.pdf", "test-drive", "fa-match-item", Option.None),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/fa-match.pdf", "test-drive", "fa-match-item"),
                 Option.None));
         var freeAgentErrorDue = BuildRecord(
             new InvoiceConfigurationId("freeagent-error-due"),
             new DateOnly(2025, 7, 8),
             state: new FreeAgentError(
                 BuildActualDetails(),
-                new OneDriveDetails("/drives/test/root:/Bills/Test/fa-error.pdf", "test-drive", "fa-error-item", Option.None),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/fa-error.pdf", "test-drive", "fa-error-item"),
                 "FreeAgent bill locked",
                 Option.None));
         var freeAgentInterventionPendingNotDue = BuildRecord(
@@ -234,7 +234,7 @@ public sealed class CosmosInvoiceRecordRepositoryTests : IAsyncLifetime
             new DateOnly(2025, 7, 9),
             state: new FreeAgentInterventionPending(
                 BuildActualDetails(),
-                new OneDriveDetails("/drives/test/root:/Bills/Test/fa-pending.pdf", "test-drive", "fa-pending-item", Option.None),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/fa-pending.pdf", "test-drive", "fa-pending-item"),
                 new FreeAgentInterventionId("freeagent-intervention-1")));
 
         await repository!.CreateIfNotExistsAsync(expectedDue);
@@ -300,7 +300,7 @@ public sealed class CosmosInvoiceRecordRepositoryTests : IAsyncLifetime
         {
             State = new SavedToOneDrive(
                 actualDetails,
-                new OneDriveDetails("/drives/test/root:/Bills/Test/replaced.pdf", "test-drive", "replaced-item", Option.None)),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/replaced.pdf", "test-drive", "replaced-item")),
         };
 
         await repository.ReplaceAsync(saved);

@@ -35,7 +35,7 @@ public sealed class ExpectedRecordGeneratorTests
             expectedDate: new DateOnly(2025, 7, 1),
             state: new SavedToOneDrive(
                 Actuals.Build(new DateOnly(2025, 7, 5)),
-                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item", Option.None)));
+                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item")));
         var records = new InMemoryInvoiceRecordRepository(existing);
         var generator = BuildGenerator(records);
 
