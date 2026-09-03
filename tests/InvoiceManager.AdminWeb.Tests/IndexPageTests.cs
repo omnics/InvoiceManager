@@ -18,16 +18,35 @@ public sealed class IndexPageTests
     public async Task GenerateExpectedRecords_TriggersFunction_AndSurfacesResultAsStatusMessage()
     {
         var trigger = new FakeExpectedRecordGenerationTrigger(
-            new ExpectedRecordGenerationTriggered(207));
+            new ExpectedRecordGenerationTriggered());
         var model = CreateIndexModel(generationTrigger: trigger);
 
         var result = await model.OnPostGenerateExpectedRecordsAsync();
 
         Assert.IsType<Microsoft.AspNetCore.Mvc.RedirectToPageResult>(result);
         Assert.True(trigger.WasTriggered);
-        Assert.Equal(
-            "Expected record generation was triggered (HTTP 207).",
-            model.TempData["StatusMessage"]);
+        Assert.Matches(
+            @"^Started invoice processing at \d{2}:\d{2}:\d{2}\.$",
+            (string)model.TempData["StatusMessage"]!);
+        Assert.Equal(false, model.TempData["StatusIsWarning"]);
+    }
+
+    [Fact]
+    public async Task GenerateExpectedRecords_SurfacesBuriedErrors_WhenTheFunctionReports207WithFailures()
+    {
+        // GenerateExpectedRecordsHttp always answers 207 regardless of per-item outcome, so a
+        // success HTTP status alone doesn't mean the run was clean - the trigger has to inspect
+        // the response body to find failures like this one.
+        var trigger = new FakeExpectedRecordGenerationTrigger(
+            new ExpectedRecordGenerationCompletedWithErrors(["Configuration acme: boom"]));
+        var model = CreateIndexModel(generationTrigger: trigger);
+
+        await model.OnPostGenerateExpectedRecordsAsync();
+
+        Assert.Matches(
+            @"^Started invoice processing at \d{2}:\d{2}:\d{2}, but 1 item\(s\) failed: Configuration acme: boom$",
+            (string)model.TempData["StatusMessage"]!);
+        Assert.Equal(true, model.TempData["StatusIsWarning"]);
     }
 
     [Fact]
@@ -40,8 +59,9 @@ public sealed class IndexPageTests
         await model.OnPostGenerateExpectedRecordsAsync();
 
         Assert.Equal(
-            "The Functions app URL is not configured, so expected record generation could not be triggered.",
+            "The Functions app URL is not configured, so invoice processing could not be started.",
             model.TempData["StatusMessage"]);
+        Assert.Equal(true, model.TempData["StatusIsWarning"]);
     }
 
     [Fact]
@@ -159,6 +179,7 @@ public sealed class IndexPageTests
             "The most recent record was refreshed from the current configuration and reset to Expected; it will " +
             "be retried the next time this configuration is processed (skipped while it is inactive).",
             model.TempData["StatusMessage"]);
+        Assert.Equal(false, model.TempData["StatusIsWarning"]);
     }
 
     [Fact]
@@ -180,6 +201,7 @@ public sealed class IndexPageTests
             "This resync would supersede a pending Guess-removal intervention without a decision being " +
             "recorded. Confirm before continuing.",
             model.TempData["StatusMessage"]);
+        Assert.Equal(true, model.TempData["StatusIsWarning"]);
     }
 
     [Fact]
@@ -195,6 +217,7 @@ public sealed class IndexPageTests
         Assert.Equal(
             "Capture Microsoft authorization before resyncing a record.",
             model.TempData["StatusMessage"]);
+        Assert.Equal(true, model.TempData["StatusIsWarning"]);
     }
 
     private static IndexModel CreateIndexModel(
@@ -205,7 +228,7 @@ public sealed class IndexPageTests
     {
         var records = new InMemoryInvoiceRecordRepository();
         var model = new IndexModel(
-            generationTrigger ?? new FakeExpectedRecordGenerationTrigger(new ExpectedRecordGenerationTriggered(207)),
+            generationTrigger ?? new FakeExpectedRecordGenerationTrigger(new ExpectedRecordGenerationTriggered()),
             overview ?? new InvoiceSyncOverview(new InvoiceConfigurationService(new FakeConfigurationRepository()), records),
             new FakeMicrosoftAuthorizationStore(hasWorkflowAuthorization),
             resyncTrigger ?? new FakeInvoiceRecordResyncTrigger());
@@ -227,7 +250,7 @@ public sealed class IndexPageTests
 
         public FakeExpectedRecordGenerationTrigger(ExpectedRecordGenerationTriggerResult? result = null)
         {
-            this.result = result ?? new ExpectedRecordGenerationTriggered(207);
+            this.result = result ?? new ExpectedRecordGenerationTriggered();
         }
 
         public bool WasTriggered { get; private set; }

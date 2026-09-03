@@ -350,8 +350,8 @@ never touches `invoice-configurations`. Like `-ClearDatabase`, it is refused aga
 `--clear-database`. Like `-ClearDatabase`, it only takes a snapshot of item IDs and
 then deletes them — it does not pause `GenerateExpectedRecordsTimer` or any other
 writer, so run it when no due-invoice processing run is in flight, or a record
-created mid-clear can survive. After clearing, trigger "Generate expected records"
-from the AdminWeb homepage (or wait for `GenerateExpectedRecordsTimer`) to regenerate expected
+created mid-clear can survive. After clearing, trigger "Start" under "Manually
+process invoices" on the AdminWeb homepage (or wait for `GenerateExpectedRecordsTimer`) to regenerate expected
 records from each configuration's `StartDate`, as if no runs had yet occurred.
 
 Use `-AutoApprove` only when the script should skip its confirmation prompt

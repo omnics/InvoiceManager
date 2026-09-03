@@ -25,6 +25,7 @@ public class IndexModel(
     public IReadOnlyList<InvoiceSyncRow> Rows { get; private set; } = [];
     public bool HasWorkflowAuthorization { get; private set; }
     public string? StatusMessage { get; private set; }
+    public bool StatusIsWarning { get; private set; }
     public InvoiceSyncSortColumn Sort { get; private set; }
     public bool SortDescending { get; private set; }
 
@@ -45,20 +46,25 @@ public class IndexModel(
         ResolveSort();
         await LoadAsync();
         StatusMessage = TempData["StatusMessage"] as string;
+        StatusIsWarning = TempData["StatusIsWarning"] as bool? ?? false;
     }
 
     public async Task<IActionResult> OnPostGenerateExpectedRecordsAsync()
     {
         var result = await expectedRecordGenerationTrigger.TriggerAsync(HttpContext.RequestAborted);
-        TempData["StatusMessage"] = result switch
+        var (message, isWarning) = result switch
         {
-            ExpectedRecordGenerationTriggered triggered =>
-                $"Expected record generation was triggered (HTTP {triggered.StatusCode}).",
+            ExpectedRecordGenerationTriggered =>
+                ($"Started invoice processing at {DateTime.Now:HH:mm:ss}.", false),
+            ExpectedRecordGenerationCompletedWithErrors withErrors =>
+                ($"Started invoice processing at {DateTime.Now:HH:mm:ss}, but {withErrors.Errors.Count} " +
+                    $"item(s) failed: {string.Join("; ", withErrors.Errors)}", true),
             ExpectedRecordGenerationNotConfigured =>
-                "The Functions app URL is not configured, so expected record generation could not be triggered.",
+                ("The Functions app URL is not configured, so invoice processing could not be started.", true),
             ExpectedRecordGenerationFailed failed =>
-                $"Expected record generation could not be triggered. {failed.Message}",
+                ($"Invoice processing could not be started. {failed.Message}", true),
         };
+        SetStatus(message, isWarning);
         return RedirectToCurrentSort();
     }
 
@@ -66,30 +72,37 @@ public class IndexModel(
     {
         if (!await authorizationStore.HasTokenCacheAsync(HttpContext.RequestAborted))
         {
-            TempData["StatusMessage"] = "Capture Microsoft authorization before resyncing a record.";
+            SetStatus("Capture Microsoft authorization before resyncing a record.", isWarning: true);
             return RedirectToCurrentSort();
         }
 
         var result = await resyncTrigger.TriggerAsync(
             new(id), integrationType, User.ToConfigurationActor(), confirmed, HttpContext.RequestAborted);
-        TempData["StatusMessage"] = result switch
+        var (message, isWarning) = result switch
         {
             InvoiceRecordResyncTriggerSucceeded =>
-                "The most recent record was refreshed from the current configuration and reset to Expected; it will " +
-                "be retried the next time this configuration is processed (skipped while it is inactive).",
+                ("The most recent record was refreshed from the current configuration and reset to Expected; it will " +
+                "be retried the next time this configuration is processed (skipped while it is inactive).", false),
             InvoiceRecordResyncTriggerNoRecordExists =>
-                "This configuration has no record yet, so there is nothing to resync.",
+                ("This configuration has no record yet, so there is nothing to resync.", true),
             InvoiceRecordResyncTriggerNotEligible =>
-                "The most recent record has already progressed past matching, so it was not resynced.",
+                ("The most recent record has already progressed past matching, so it was not resynced.", true),
             InvoiceRecordResyncTriggerConfirmationRequired =>
-                "This resync would supersede a pending Guess-removal intervention without a decision being " +
-                "recorded. Confirm before continuing.",
-            InvoiceRecordResyncTriggerConfigurationNotFound => "Configuration not found.",
+                ("This resync would supersede a pending Guess-removal intervention without a decision being " +
+                "recorded. Confirm before continuing.", true),
+            InvoiceRecordResyncTriggerConfigurationNotFound => ("Configuration not found.", true),
             InvoiceRecordResyncNotConfigured =>
-                "The Functions app URL is not configured, so the resync could not be triggered.",
-            InvoiceRecordResyncFailed failed => $"The resync could not be triggered. {failed.Message}",
+                ("The Functions app URL is not configured, so the resync could not be triggered.", true),
+            InvoiceRecordResyncFailed failed => ($"The resync could not be triggered. {failed.Message}", true),
         };
+        SetStatus(message, isWarning);
         return RedirectToCurrentSort();
+    }
+
+    private void SetStatus(string message, bool isWarning)
+    {
+        TempData["StatusMessage"] = message;
+        TempData["StatusIsWarning"] = isWarning;
     }
 
     /// <summary>
