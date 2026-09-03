@@ -45,7 +45,9 @@ internal sealed class ActualInvoiceDetailsDocument
 /// <summary>
 /// The Cosmos JSON shape for <see cref="OneDriveDetails"/>. The sub-object is
 /// present only when the record's state carries a OneDrive location; when
-/// present, every property is required.
+/// present, every property except <see cref="FolderLocation"/> is required -
+/// that one is absent for a record saved before it existed, or if Graph didn't
+/// report a parent.
 /// </summary>
 internal sealed class OneDriveDetailsDocument
 {
@@ -58,10 +60,19 @@ internal sealed class OneDriveDetailsDocument
     [JsonPropertyName("itemId")]
     public required string ItemId { get; init; }
 
-    public OneDriveDetails ToDetails() => new(OneDriveLocation, DriveId, ItemId);
+    [JsonPropertyName("folderLocation")]
+    public string? FolderLocation { get; init; }
 
-    public static OneDriveDetailsDocument FromDetails(OneDriveDetails details) =>
-        new() { OneDriveLocation = details.OneDriveLocation, DriveId = details.DriveId, ItemId = details.ItemId };
+    public OneDriveDetails ToDetails() =>
+        new(OneDriveLocation, DriveId, ItemId, FolderLocation is { } folder ? folder : Option.None);
+
+    public static OneDriveDetailsDocument FromDetails(OneDriveDetails details) => new()
+    {
+        OneDriveLocation = details.OneDriveLocation,
+        DriveId = details.DriveId,
+        ItemId = details.ItemId,
+        FolderLocation = details.FolderLocation switch { string f => f, None => null },
+    };
 }
 
 /// <summary>The Cosmos JSON shape for <see cref="FreeAgentAttachmentMetadata"/>.</summary>

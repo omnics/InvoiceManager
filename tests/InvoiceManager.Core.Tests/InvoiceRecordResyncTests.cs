@@ -149,7 +149,7 @@ public sealed class InvoiceRecordResyncTests
     }
 
     private static readonly OneDriveDetails OneDrive = new(
-        "/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item");
+        "/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item", Option.None);
 
     private static InvoiceWorkflowState BuildState(Type stateType)
     {

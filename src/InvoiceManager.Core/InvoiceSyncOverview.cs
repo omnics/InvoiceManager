@@ -1,3 +1,4 @@
+using InvoiceManager.Core.Integrations.FreeAgent;
 using InvoiceManager.Core.Repositories;
 
 namespace InvoiceManager.Core;
@@ -44,6 +45,12 @@ public sealed record InvoiceSyncRow(
     public bool IsActualDate => InvoiceSyncOverview.ActualDate(State) is DateOnly;
     public InvoiceSyncBucket Bucket => InvoiceSyncOverview.Bucket(State);
     public Option<string> Diagnostic => InvoiceSyncOverview.Diagnostic(State);
+
+    /// <summary>Where the downloaded invoice file/folder live in OneDrive, for the row's "Open file"/"Open folder" actions.</summary>
+    public Option<OneDriveDetails> OneDrive => InvoiceSyncOverview.OneDrive(State);
+
+    /// <summary>The matched FreeAgent bill, for the row's "Open FreeAgent bill" action.</summary>
+    public Option<FreeAgentBillIdentity> FreeAgentBill => InvoiceSyncOverview.FreeAgentBill(State);
 
     /// <summary>
     /// Whether this row's Resync action is offered. <see cref="InvoiceRecordResync.ResyncMostRecentAsync"/>
@@ -186,5 +193,26 @@ public sealed class InvoiceSyncOverview(
         SavedToOneDrive => Option.None,
         ReconciledFromOneDrive => Option.None,
         FreeAgentAttached => Option.None,
+    };
+
+    internal static Option<OneDriveDetails> OneDrive(InvoiceWorkflowState state) => state switch
+    {
+        ReconciledFromOneDrive reconciled => reconciled.OneDriveDetails,
+        SavedToOneDrive saved => saved.OneDriveDetails,
+        FreeAgentMatchExpected matchExpected => matchExpected.OneDriveDetails,
+        FreeAgentBillMatched matched => matched.OneDriveDetails,
+        FreeAgentBillReconciled reconciledBill => reconciledBill.OneDriveDetails,
+        FreeAgentAttached attached => attached.OneDriveDetails,
+        FreeAgentInterventionPending pending => pending.OneDriveDetails,
+        FreeAgentError freeAgentError => freeAgentError.OneDriveDetails,
+        Expected or NotFound or RetrievalError or Retrieved => Option.None,
+    };
+
+    internal static Option<FreeAgentBillIdentity> FreeAgentBill(InvoiceWorkflowState state) => state switch
+    {
+        FreeAgentBillMatched matched => matched.Bill,
+        FreeAgentBillReconciled reconciledBill => reconciledBill.Bill,
+        FreeAgentAttached attached => attached.Bill,
+        _ => Option.None,
     };
 }

@@ -13,7 +13,7 @@ public sealed class InvoiceSyncOverviewTests
             expectedDate: new DateOnly(2025, 7, 1),
             state: new SavedToOneDrive(
                 Actuals.Build(new DateOnly(2025, 7, 1)),
-                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item")));
+                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item", Option.None)));
         var records = new InMemoryInvoiceRecordRepository(completed);
         var overview = new InvoiceSyncOverview(
             new InvoiceConfigurationService(new FakeConfigurationRepository(config)), records);
@@ -35,7 +35,7 @@ public sealed class InvoiceSyncOverviewTests
             expectedDate: new DateOnly(2025, 6, 1),
             state: new SavedToOneDrive(
                 Actuals.Build(new DateOnly(2025, 6, 1)),
-                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item")));
+                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item", Option.None)));
         var current = Records.Build(
             config, expectedDate: new DateOnly(2025, 7, 1), state: new RetrievalError("transient failure"));
         var records = new InMemoryInvoiceRecordRepository(completed, current);
@@ -63,19 +63,19 @@ public sealed class InvoiceSyncOverviewTests
             expectedDate: new DateOnly(2025, 5, 1),
             state: new FreeAgentAttached(
                 Actuals.Build(new DateOnly(2025, 5, 1)),
-                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item"),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item", Option.None),
                 new Integrations.FreeAgent.FreeAgentBillIdentity("https://api.freeagent.com/v2/bills/1"),
                 new Integrations.FreeAgent.FreeAgentAttachmentMetadata(
                     "invoice.pdf", 1024, "application/pdf", DateTimeOffset.UtcNow)));
         var stuckJune = Records.Build(
             config, expectedDate: new DateOnly(2025, 6, 1), state: new FreeAgentMatchExpected(
                 Actuals.Build(new DateOnly(2025, 6, 1)),
-                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item"),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item", Option.None),
                 Option.None));
         var stuckJuly = Records.Build(
             config, expectedDate: new DateOnly(2025, 7, 1), state: new FreeAgentMatchExpected(
                 Actuals.Build(new DateOnly(2025, 7, 1)),
-                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item"),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item", Option.None),
                 Option.None));
         var current = Records.Build(config, expectedDate: new DateOnly(2025, 8, 1), state: new Expected(Option.None));
         var records = new InMemoryInvoiceRecordRepository(completed, stuckJune, stuckJuly, current);
@@ -128,7 +128,7 @@ public sealed class InvoiceSyncOverviewTests
             expectedDate: new DateOnly(2025, 7, 1),
             state: new SavedToOneDrive(
                 Actuals.Build(new DateOnly(2025, 7, 1)),
-                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item")));
+                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item", Option.None)));
         var records = new InMemoryInvoiceRecordRepository(stuckJune, completedJuly);
         var overview = new InvoiceSyncOverview(
             new InvoiceConfigurationService(new FakeConfigurationRepository(config)), records);
@@ -184,7 +184,7 @@ public sealed class InvoiceSyncOverviewTests
     public void Bucket_GroupsEveryWorkflowState_IntoTheExpectedBucket(Type stateType, InvoiceSyncBucket expectedBucket)
     {
         var actualDetails = Actuals.Build();
-        var oneDrive = new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item");
+        var oneDrive = new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item", Option.None);
         var bill = new Integrations.FreeAgent.FreeAgentBillIdentity("https://api.freeagent.com/v2/bills/1");
 
         InvoiceWorkflowState state = stateType.Name switch
@@ -212,6 +212,74 @@ public sealed class InvoiceSyncOverviewTests
         Assert.Equal(expectedBucket, InvoiceSyncOverview.Bucket(state));
     }
 
+    [Fact]
+    public async Task GetRowsAsync_ExposesOneDriveDetails_ForARowThatDownloadedTheInvoice()
+    {
+        var config = Configurations.Build(id: new InvoiceConfigurationId("acme"));
+        var oneDrive = new OneDriveDetails(
+            "/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item", "/drives/test/root:/Bills/Test");
+        var record = Records.Build(
+            config, expectedDate: new DateOnly(2025, 7, 1), state: new SavedToOneDrive(Actuals.Build(), oneDrive));
+        var records = new InMemoryInvoiceRecordRepository(record);
+        var overview = new InvoiceSyncOverview(
+            new InvoiceConfigurationService(new FakeConfigurationRepository(config)), records);
+
+        var rows = await overview.GetRowsAsync();
+
+        Assert.True(Assert.Single(rows).OneDrive is OneDriveDetails found && found == oneDrive);
+    }
+
+    [Fact]
+    public async Task GetRowsAsync_ReportsNoOneDriveDetails_ForARowThatHasNotDownloadedAnything()
+    {
+        var config = Configurations.Build(id: new InvoiceConfigurationId("acme"));
+        var record = Records.Build(config, expectedDate: new DateOnly(2025, 7, 1), state: new Expected(Option.None));
+        var records = new InMemoryInvoiceRecordRepository(record);
+        var overview = new InvoiceSyncOverview(
+            new InvoiceConfigurationService(new FakeConfigurationRepository(config)), records);
+
+        var rows = await overview.GetRowsAsync();
+
+        Assert.True(Assert.Single(rows).OneDrive is None);
+    }
+
+    [Fact]
+    public async Task GetRowsAsync_ExposesTheFreeAgentBill_ForARowThatHasMatchedOne()
+    {
+        var config = Configurations.Build(id: new InvoiceConfigurationId("acme"));
+        var oneDrive = new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item", Option.None);
+        var bill = new Integrations.FreeAgent.FreeAgentBillIdentity("https://api.freeagent.com/v2/bills/1");
+        var record = Records.Build(
+            config,
+            expectedDate: new DateOnly(2025, 7, 1),
+            state: new FreeAgentBillMatched(Actuals.Build(), oneDrive, bill));
+        var records = new InMemoryInvoiceRecordRepository(record);
+        var overview = new InvoiceSyncOverview(
+            new InvoiceConfigurationService(new FakeConfigurationRepository(config)), records);
+
+        var rows = await overview.GetRowsAsync();
+
+        Assert.True(Assert.Single(rows).FreeAgentBill is Integrations.FreeAgent.FreeAgentBillIdentity found && found == bill);
+    }
+
+    [Fact]
+    public async Task GetRowsAsync_ReportsNoFreeAgentBill_ForARowThatHasNotMatchedOneYet()
+    {
+        var config = Configurations.Build(id: new InvoiceConfigurationId("acme"));
+        var oneDrive = new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item", Option.None);
+        var record = Records.Build(
+            config,
+            expectedDate: new DateOnly(2025, 7, 1),
+            state: new FreeAgentMatchExpected(Actuals.Build(), oneDrive, Option.None));
+        var records = new InMemoryInvoiceRecordRepository(record);
+        var overview = new InvoiceSyncOverview(
+            new InvoiceConfigurationService(new FakeConfigurationRepository(config)), records);
+
+        var rows = await overview.GetRowsAsync();
+
+        Assert.True(Assert.Single(rows).FreeAgentBill is None);
+    }
+
     [Theory]
     [InlineData(typeof(RetrievalError), "RetrievalError")]
     [InlineData(typeof(FreeAgentInterventionPending), "FreeAgentInterventionPending")]
@@ -221,7 +289,7 @@ public sealed class InvoiceSyncOverviewTests
         // InvoiceWorkflowState is a generated union wrapper struct - State.GetType().Name would
         // return "InvoiceWorkflowState" for every row regardless of which case it holds, so
         // StateName must come from an explicit switch instead of reflection over State itself.
-        var oneDrive = new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item");
+        var oneDrive = new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item", Option.None);
         InvoiceWorkflowState state = stateType.Name switch
         {
             nameof(RetrievalError) => new RetrievalError("transient failure"),

@@ -69,11 +69,12 @@ public sealed class GraphOneDriveIntegration(
             ?? throw new InvalidOperationException(
                 $"OneDrive upload of '{request.FileName}' succeeded but returned no item ID.");
         var location = item?.WebUrl ?? itemId;
+        Option<string> folderLocation = item?.ParentReference?.WebUrl is string folderUrl ? folderUrl : Option.None;
 
         activity?.SetTag("onedrive.location", location);
         logger.LogInformation(
             "Uploaded '{FileName}' to OneDrive at {Location}.", request.FileName, location);
-        return new OneDriveDetails(location, request.Destination.DriveId, itemId);
+        return new OneDriveDetails(location, request.Destination.DriveId, itemId, folderLocation);
     }
 
     public async Task<OneDriveSearchResult> SearchAsync(
@@ -143,6 +144,7 @@ public sealed class GraphOneDriveIntegration(
         var itemId = best.Id
             ?? throw new InvalidOperationException($"OneDrive file '{best.Name}' matched but returned no item ID.");
         var location = best.WebUrl ?? itemId;
+        Option<string> folderLocation = best.ParentReference?.WebUrl is string folderUrl ? folderUrl : Option.None;
         var matchReason =
             $"Matched OneDrive file '{best.Name}' by date {bestParsed.InvoiceDate:O} " +
             $"(within {request.Criteria.DateToleranceDays}d)" +
@@ -159,7 +161,8 @@ public sealed class GraphOneDriveIntegration(
             bestParsed.Amount,
             new SourceInvoiceId(bestParsed.InvoiceName));
 
-        return new OneDriveMatch(new OneDriveDetails(location, request.Destination.DriveId, itemId), details, matchReason);
+        return new OneDriveMatch(
+            new OneDriveDetails(location, request.Destination.DriveId, itemId, folderLocation), details, matchReason);
     }
 
     public async Task<byte[]> DownloadAsync(OneDriveDetails details, CancellationToken cancellationToken = default)
@@ -183,7 +186,8 @@ public sealed class GraphOneDriveIntegration(
 
     private sealed record DriveItemResponse(
         [property: JsonPropertyName("id")] string? Id,
-        [property: JsonPropertyName("webUrl")] string? WebUrl);
+        [property: JsonPropertyName("webUrl")] string? WebUrl,
+        [property: JsonPropertyName("parentReference")] DriveItemParentReference? ParentReference);
 
     private sealed record DriveChildrenResponse(
         [property: JsonPropertyName("value")] IReadOnlyList<DriveChild>? Value,
@@ -192,5 +196,11 @@ public sealed class GraphOneDriveIntegration(
     private sealed record DriveChild(
         [property: JsonPropertyName("id")] string? Id,
         [property: JsonPropertyName("name")] string? Name,
+        [property: JsonPropertyName("webUrl")] string? WebUrl,
+        [property: JsonPropertyName("parentReference")] DriveItemParentReference? ParentReference);
+
+    // Graph includes this on every driveItem response by default (no $select needed), so
+    // capturing the containing folder's webUrl here costs no extra API call.
+    private sealed record DriveItemParentReference(
         [property: JsonPropertyName("webUrl")] string? WebUrl);
 }

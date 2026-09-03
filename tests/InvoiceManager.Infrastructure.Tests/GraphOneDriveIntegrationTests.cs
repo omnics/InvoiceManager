@@ -34,6 +34,7 @@ public sealed class GraphOneDriveIntegrationTests
         Assert.Equal("https://contoso-my.sharepoint.com/invoice.pdf", result.OneDriveLocation);
         Assert.Equal("drive-1", result.DriveId);
         Assert.Equal("01ABCDEF", result.ItemId);
+        Assert.True(result.FolderLocation is None, "Expected no folder location when Graph reports no parentReference.");
 
         var request = Assert.Single(handler.Requests);
         Assert.Equal(HttpMethod.Put, request.Method);
@@ -41,6 +42,27 @@ public sealed class GraphOneDriveIntegrationTests
             "https://graph.microsoft.com/v1.0/drives/drive-1/items/folder-1:/",
             Uri.UnescapeDataString(request.RequestUri!.ToString()));
         Assert.EndsWith(":/content", request.RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task UploadAsync_CapturesTheParentFolderWebUrl_FromTheSameResponse_WithNoExtraApiCall()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => Json(
+            HttpStatusCode.Created,
+            """
+            {
+                "id": "01ABCDEF",
+                "webUrl": "https://contoso-my.sharepoint.com/invoice.pdf",
+                "parentReference": { "webUrl": "https://contoso-my.sharepoint.com/Bills" }
+            }
+            """));
+        using var httpClient = new HttpClient(handler);
+        var integration = Build(httpClient);
+
+        var result = await integration.UploadAsync(new OneDriveUploadRequest(Folder, "invoice.pdf", [1, 2, 3]));
+
+        Assert.True(result.FolderLocation is "https://contoso-my.sharepoint.com/Bills");
+        Assert.Single(handler.Requests);
     }
 
     [Fact]
@@ -110,6 +132,32 @@ public sealed class GraphOneDriveIntegrationTests
         var request = Assert.Single(handler.Requests);
         Assert.Equal(HttpMethod.Get, request.Method);
         Assert.EndsWith("/children", request.RequestUri!.ToString());
+        Assert.True(match.OneDriveDetails.FolderLocation is None, "Expected no folder location when Graph reports no parentReference.");
+    }
+
+    [Fact]
+    public async Task SearchAsync_CapturesTheParentFolderWebUrl_FromTheSameResponse_WithNoExtraApiCall()
+    {
+        var handler = new StubHttpMessageHandler((_, _) => Json(HttpStatusCode.OK, """
+            {
+                "value": [
+                    {
+                        "id": "id-1",
+                        "name": "2026-07-10 Microsoft 365 Business Basic G152207778 £11.59 exc.pdf",
+                        "webUrl": "https://example/id-1",
+                        "parentReference": { "webUrl": "https://example/folder" }
+                    }
+                ]
+            }
+            """));
+        using var httpClient = new HttpClient(handler);
+        var integration = Build(httpClient);
+
+        var result = await integration.SearchAsync(new OneDriveSearchRequest(Folder, Criteria()));
+
+        var match = AssertMatch(result);
+        Assert.True(match.OneDriveDetails.FolderLocation is "https://example/folder");
+        Assert.Single(handler.Requests);
     }
 
     [Theory]
@@ -289,7 +337,7 @@ public sealed class GraphOneDriveIntegrationTests
         using var httpClient = new HttpClient(handler);
         var integration = Build(httpClient);
 
-        var result = await integration.DownloadAsync(new OneDriveDetails("https://example/id-1", "drive-1", "item-1"));
+        var result = await integration.DownloadAsync(new OneDriveDetails("https://example/id-1", "drive-1", "item-1", Option.None));
 
         Assert.Equal(pdf, result);
         var request = Assert.Single(handler.Requests);
@@ -307,7 +355,7 @@ public sealed class GraphOneDriveIntegrationTests
         var integration = Build(httpClient);
 
         await Assert.ThrowsAsync<HttpRequestException>(() =>
-            integration.DownloadAsync(new OneDriveDetails("https://example/id-1", "drive-1", "item-1")));
+            integration.DownloadAsync(new OneDriveDetails("https://example/id-1", "drive-1", "item-1", Option.None)));
     }
 
     private static OneDriveMatch AssertMatch(OneDriveSearchResult result) =>

@@ -1,8 +1,11 @@
 using InvoiceManager.AdminWeb.Services;
 using InvoiceManager.Core;
+using InvoiceManager.Core.Integrations.FreeAgent;
+using InvoiceManager.Infrastructure.FreeAgentAuthorization;
 using InvoiceManager.Infrastructure.MicrosoftAuthorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.Extensions.Options;
 
 namespace InvoiceManager.AdminWeb.Pages;
 
@@ -21,7 +24,8 @@ public class IndexModel(
     InvoiceSyncOverview overview,
     IMicrosoftAuthorizationStore authorizationStore,
     IInvoiceRecordResyncTrigger resyncTrigger,
-    TimeProvider timeProvider) : PageModel
+    TimeProvider timeProvider,
+    IOptions<FreeAgentOptions> freeAgentOptions) : PageModel
 {
     public IReadOnlyList<InvoiceSyncRow> Rows { get; private set; } = [];
     public bool HasWorkflowAuthorization { get; private set; }
@@ -104,6 +108,23 @@ public class IndexModel(
         SetStatus(message, isWarning);
         return RedirectToCurrentSort();
     }
+
+    /// <summary>
+    /// The bill's link in FreeAgent's own web app, or null if <c>FreeAgent:Subdomain</c> isn't
+    /// configured for this deployment - see <see cref="FreeAgentBillWebLinkExtensions.WebUrl"/>.
+    /// </summary>
+    public string? FreeAgentBillUrl(FreeAgentBillIdentity bill) =>
+        bill.WebUrl(freeAgentOptions.Value) is Uri url ? url.ToString() : null;
+
+    /// <summary>
+    /// Whether <paramref name="location"/> is safe to render as an "Open file"/"Open folder"
+    /// link - <see cref="OneDriveDetails.OneDriveLocation"/> falls back to a bare item ID (not a
+    /// URL at all) when Graph didn't report a webUrl, and that must never be linked. Deliberately
+    /// not <see cref="Uri.IsWellFormedUriString"/>, which is stricter than real SharePoint webUrls
+    /// satisfy (e.g. an unencoded '+' in a folder name) and would reject perfectly good links.
+    /// </summary>
+    public bool IsHttpsUrl(string location) =>
+        Uri.TryCreate(location, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps;
 
     private void SetStatus(string message, bool isWarning)
     {

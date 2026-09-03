@@ -1,12 +1,14 @@
 using InvoiceManager.AdminWeb.Pages;
 using InvoiceManager.AdminWeb.Services;
 using InvoiceManager.Core;
+using InvoiceManager.Infrastructure.FreeAgentAuthorization;
 using InvoiceManager.Infrastructure.MicrosoftAuthorization;
 using InvoiceManager.TestSupport;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.Extensions.Options;
 
 namespace InvoiceManager.AdminWeb.Tests;
 
@@ -73,7 +75,7 @@ public sealed class IndexPageTests
             expectedDate: new DateOnly(2025, 6, 1),
             state: new SavedToOneDrive(
                 Actuals.Build(new DateOnly(2025, 6, 1)),
-                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item")));
+                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item", Option.None)));
         var current = Records.Build(
             config, expectedDate: new DateOnly(2025, 7, 1), state: new RetrievalError("transient failure"));
         var records = new InMemoryInvoiceRecordRepository(completed, current);
@@ -123,6 +125,22 @@ public sealed class IndexPageTests
 
         Assert.False(model.SortDescending);
         Assert.Equal(["Alpha", "Zeta"], model.Rows.Select(r => r.DisplayName));
+    }
+
+    [Theory]
+    [InlineData(
+        "https://omnics-my.sharepoint.com/personal/joshua_omnics_tech/Documents/Test/Bills/" +
+        "Azure%20+%20Visual%20Studio/2026-06-09%20G164045971%20%C2%A340.01%20inc.pdf",
+        true)] // A real Graph webUrl - Uri.IsWellFormedUriString rejects this (unencoded '+' in the path)
+               // even though it's a perfectly good, working link; must not be used here.
+    [InlineData("https://example.com/file.pdf", true)]
+    [InlineData("http://example.com/file.pdf", false)] // Not https.
+    [InlineData("01ABCDEF", false)] // OneDriveLocation's bare-item-ID fallback when Graph reports no webUrl.
+    public void IsHttpsUrl_AcceptsRealWebUrls_ButRejectsNonHttpsOrNonUrlValues(string location, bool expected)
+    {
+        var model = CreateIndexModel();
+
+        Assert.Equal(expected, model.IsHttpsUrl(location));
     }
 
     [Fact]
@@ -233,7 +251,8 @@ public sealed class IndexPageTests
             overview ?? new InvoiceSyncOverview(new InvoiceConfigurationService(new FakeConfigurationRepository()), records),
             new FakeMicrosoftAuthorizationStore(hasWorkflowAuthorization),
             resyncTrigger ?? new FakeInvoiceRecordResyncTrigger(),
-            timeProvider ?? new FixedTimeProvider(new DateTimeOffset(2026, 9, 3, 14, 32, 31, TimeSpan.Zero)));
+            timeProvider ?? new FixedTimeProvider(new DateTimeOffset(2026, 9, 3, 14, 32, 31, TimeSpan.Zero)),
+            Options.Create(new FreeAgentOptions { Environment = FreeAgentEnvironment.Sandbox, Subdomain = "acmeltd" }));
 
         var httpContext = new DefaultHttpContext
         {

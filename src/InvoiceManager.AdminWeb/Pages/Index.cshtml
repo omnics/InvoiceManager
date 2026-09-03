@@ -1,6 +1,7 @@
 @page
 @model IndexModel
 @using InvoiceManager.Core
+@using InvoiceManager.Core.Integrations.FreeAgent
 @{
     ViewData["Title"] = "Invoice processing";
 }
@@ -77,6 +78,21 @@
                                             <summary aria-label="Actions for @row.DisplayName"></summary>
                                             <div class="row-actions-panel">
                                                 <a class="row-action-item" asp-page="/Configurations/Edit" asp-route-id="@row.ConfigurationId.Value" asp-route-integrationType="@row.IntegrationType">Edit configuration</a>
+                                                @if (row.OneDrive is OneDriveDetails oneDrive)
+                                                {
+                                                    @if (Model.IsHttpsUrl(oneDrive.OneDriveLocation))
+                                                    {
+                                                        <a class="row-action-item" href="@oneDrive.OneDriveLocation">Open file</a>
+                                                    }
+                                                    @if (oneDrive.FolderLocation is string folderLocation && Model.IsHttpsUrl(folderLocation))
+                                                    {
+                                                        <a class="row-action-item" href="@folderLocation">Open folder</a>
+                                                    }
+                                                }
+                                                @if (row.FreeAgentBill is FreeAgentBillIdentity bill && Model.FreeAgentBillUrl(bill) is string billUrl)
+                                                {
+                                                    <a class="row-action-item" href="@billUrl">Open FreeAgent bill</a>
+                                                }
                                                 @if (row.CanResync)
                                                 {
                                                     if (row.ResyncRequiresConfirmation)
