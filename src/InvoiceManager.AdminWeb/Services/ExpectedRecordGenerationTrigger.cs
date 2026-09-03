@@ -50,6 +50,14 @@ public sealed class FunctionsExpectedRecordGenerationTrigger(
     // Isolated-worker HTTP functions are exposed under /api/{FunctionName}.
     private const string TriggerPath = "/api/GenerateExpectedRecordsHttp";
 
+    // The only statuses GenerateExpectedRecordsHttp reports that mean "nothing for the
+    // operator to look at": a completed generation/save, or a record still legitimately
+    // waiting on its tolerance window (NoMatch - see ProcessingNoMatch). Everything else -
+    // including a status this AdminWeb build doesn't recognise yet - is treated as needing
+    // attention, since staying silent on an unrecognised status would silently hide it.
+    private static readonly HashSet<string> CleanStatuses =
+        new(StringComparer.Ordinal) { "Succeeded", "SavedToOneDrive", "ReconciledFromOneDrive", "NoMatch" };
+
     public async Task<ExpectedRecordGenerationTriggerResult> TriggerAsync(CancellationToken cancellationToken)
     {
         var functionsBaseUrl = configuration.GetValue<Uri?>("Functions:BaseUrl");
@@ -78,11 +86,11 @@ public sealed class FunctionsExpectedRecordGenerationTrigger(
             var errors = run is null
                 ? []
                 : run.Generation
-                    .Where(g => g.Error is not null)
-                    .Select(g => $"Configuration {g.ConfigurationId}: {g.Error}")
+                    .Where(g => !CleanStatuses.Contains(g.Status))
+                    .Select(g => $"Configuration {g.ConfigurationId}: {g.Error ?? g.Status}")
                     .Concat(run.Processing
-                        .Where(p => p.Error is not null)
-                        .Select(p => $"Record {p.RecordId}: {p.Error}"))
+                        .Where(p => !CleanStatuses.Contains(p.Status))
+                        .Select(p => $"Record {p.RecordId}: {p.Error ?? p.Status}"))
                     .ToList();
 
             return errors.Count > 0

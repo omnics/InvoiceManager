@@ -20,7 +20,8 @@ public class IndexModel(
     IExpectedRecordGenerationTrigger expectedRecordGenerationTrigger,
     InvoiceSyncOverview overview,
     IMicrosoftAuthorizationStore authorizationStore,
-    IInvoiceRecordResyncTrigger resyncTrigger) : PageModel
+    IInvoiceRecordResyncTrigger resyncTrigger,
+    TimeProvider timeProvider) : PageModel
 {
     public IReadOnlyList<InvoiceSyncRow> Rows { get; private set; } = [];
     public bool HasWorkflowAuthorization { get; private set; }
@@ -51,13 +52,18 @@ public class IndexModel(
 
     public async Task<IActionResult> OnPostGenerateExpectedRecordsAsync()
     {
+        // Captured before the call, not after: TriggerAsync doesn't return until the whole
+        // (synchronous, potentially slow) Functions run has finished, so timing this afterwards
+        // would report a completion time as the start time.
+        var startedAt = timeProvider.GetUtcNow();
         var result = await expectedRecordGenerationTrigger.TriggerAsync(HttpContext.RequestAborted);
+        var startedAtDisplay = $"{startedAt.UtcDateTime:HH:mm:ss} UTC";
         var (message, isWarning) = result switch
         {
             ExpectedRecordGenerationTriggered =>
-                ($"Started invoice processing at {DateTime.Now:HH:mm:ss}.", false),
+                ($"Started invoice processing at {startedAtDisplay}.", false),
             ExpectedRecordGenerationCompletedWithErrors withErrors =>
-                ($"Started invoice processing at {DateTime.Now:HH:mm:ss}, but {withErrors.Errors.Count} " +
+                ($"Started invoice processing at {startedAtDisplay}, but {withErrors.Errors.Count} " +
                     $"item(s) failed: {string.Join("; ", withErrors.Errors)}", true),
             ExpectedRecordGenerationNotConfigured =>
                 ("The Functions app URL is not configured, so invoice processing could not be started.", true),

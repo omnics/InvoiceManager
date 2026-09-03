@@ -25,9 +25,9 @@ public sealed class IndexPageTests
 
         Assert.IsType<Microsoft.AspNetCore.Mvc.RedirectToPageResult>(result);
         Assert.True(trigger.WasTriggered);
-        Assert.Matches(
-            @"^Started invoice processing at \d{2}:\d{2}:\d{2}\.$",
-            (string)model.TempData["StatusMessage"]!);
+        Assert.Equal(
+            "Started invoice processing at 14:32:31 UTC.",
+            model.TempData["StatusMessage"]);
         Assert.Equal(false, model.TempData["StatusIsWarning"]);
     }
 
@@ -43,9 +43,9 @@ public sealed class IndexPageTests
 
         await model.OnPostGenerateExpectedRecordsAsync();
 
-        Assert.Matches(
-            @"^Started invoice processing at \d{2}:\d{2}:\d{2}, but 1 item\(s\) failed: Configuration acme: boom$",
-            (string)model.TempData["StatusMessage"]!);
+        Assert.Equal(
+            "Started invoice processing at 14:32:31 UTC, but 1 item(s) failed: Configuration acme: boom",
+            model.TempData["StatusMessage"]);
         Assert.Equal(true, model.TempData["StatusIsWarning"]);
     }
 
@@ -224,14 +224,16 @@ public sealed class IndexPageTests
         IExpectedRecordGenerationTrigger? generationTrigger = null,
         InvoiceSyncOverview? overview = null,
         IInvoiceRecordResyncTrigger? resyncTrigger = null,
-        bool hasWorkflowAuthorization = true)
+        bool hasWorkflowAuthorization = true,
+        TimeProvider? timeProvider = null)
     {
         var records = new InMemoryInvoiceRecordRepository();
         var model = new IndexModel(
             generationTrigger ?? new FakeExpectedRecordGenerationTrigger(new ExpectedRecordGenerationTriggered()),
             overview ?? new InvoiceSyncOverview(new InvoiceConfigurationService(new FakeConfigurationRepository()), records),
             new FakeMicrosoftAuthorizationStore(hasWorkflowAuthorization),
-            resyncTrigger ?? new FakeInvoiceRecordResyncTrigger());
+            resyncTrigger ?? new FakeInvoiceRecordResyncTrigger(),
+            timeProvider ?? new FixedTimeProvider(new DateTimeOffset(2026, 9, 3, 14, 32, 31, TimeSpan.Zero)));
 
         var httpContext = new DefaultHttpContext
         {

@@ -110,6 +110,7 @@ builder.Services.AddAuthorizationBuilder()
 // the Easy Auth-protected Functions app.
 builder.Services.AddSingleton<TokenCredential>(new DefaultAzureCredential());
 
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHttpClient<FunctionsHealthCheck>();
 builder.Services.AddHttpClient<IExpectedRecordGenerationTrigger, FunctionsExpectedRecordGenerationTrigger>();
 builder.Services.AddHttpClient<IInvoiceRecordResyncTrigger, FunctionsInvoiceRecordResyncTrigger>();
