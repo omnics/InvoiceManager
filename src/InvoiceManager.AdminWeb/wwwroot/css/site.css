@@ -663,6 +663,7 @@ pre {
    assistive tech while the cells participate directly in one set of
    grid tracks. Row spacing is plain `row-gap`, not empty spacer rows. */
 .table-scroll {
+  margin-top: 18px;
   overflow-x: auto;
 }
 
@@ -670,12 +671,23 @@ pre {
   display: grid;
   grid-template-columns: 4px minmax(150px, 1.3fr) minmax(110px, .8fr) minmax(120px, .9fr) minmax(170px, 1.6fr) minmax(90px, auto);
   row-gap: 10px;
-  min-width: 780px;
   font-size: .92rem;
 }
 
+/* role="rowgroup"/"row" wrapper elements stay transparent to the grid (their cells
+   participate directly in .invoice-sync-grid's own tracks) while keeping real table
+   semantics for assistive tech. A class rather than an inline style so the narrow-viewport
+   media query below can override it to lay out each row as its own card instead. */
+.grid-contents,
+.invoice-sync-grid .invoice-sync-row {
+  display: contents;
+}
+
+/* The header row's own bottom padding used to double up with row-gap, making the gap below
+   the headers roughly twice the gap between data rows. Zero the padding here and let row-gap
+   alone provide consistent spacing throughout the grid. */
 .invoice-sync-grid [role="columnheader"] {
-  padding: 0 14px 10px;
+  padding: 0 14px;
   font-size: .78rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -691,6 +703,10 @@ pre {
 .invoice-sync-grid .sort-header:hover { color: var(--ink); text-decoration: underline; }
 
 .invoice-sync-grid [role="cell"] {
+  /* Grid/flex items default to a content-based automatic minimum width that ignores a
+     track's explicit minmax() floor - without this, a cell's own content (e.g. a long
+     diagnostic message) silently widens its column past that floor instead of wrapping. */
+  min-width: 0;
   display: flex;
   align-items: center;
   padding: 14px;
@@ -725,6 +741,64 @@ pre {
 .invoice-sync-grid .diagnostic.is-error { color: var(--danger); }
 
 .invoice-sync-row.is-inactive [role="cell"]:not(.stripe-cell) { opacity: .6; }
+
+/* Below this width the 5-column layout has nowhere left to shrink without garbling every
+   field, so each record becomes its own card: the column headers (meaningless once nothing
+   lines up in columns) are hidden, and every field stacks full-width instead. */
+@media (max-width: 640px) {
+  .invoice-sync-grid {
+    display: block;
+  }
+
+  .invoice-sync-grid .header-rowgroup {
+    display: none;
+  }
+
+  .invoice-sync-grid .invoice-sync-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "config actions"
+      "date date"
+      "status status"
+      "diagnostic diagnostic";
+    column-gap: 10px;
+    row-gap: 6px;
+    margin-bottom: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel);
+  }
+  .invoice-sync-row.bucket-complete { border-left-color: var(--success-line); }
+  .invoice-sync-row.bucket-needs-attention { border-left-color: var(--warning-line); }
+  .invoice-sync-row.bucket-in-progress { border-left-color: var(--progress-line, #9db8d6); }
+
+  .invoice-sync-grid .stripe-cell { display: none; }
+
+  .invoice-sync-grid [role="cell"] {
+    padding: 0;
+    border: none;
+    background: none;
+  }
+
+  /* The desktop edge-border rules below both have higher specificity than the blanket
+     [role="cell"] reset above (an extra class on the stripe-cell selector, an extra
+     :last-child pseudo-class on the last-cell selector), so they'd otherwise still win at
+     this width and leave stray vertical borders/radii on cells inside the new card. */
+  .invoice-sync-grid .stripe-cell + [role="cell"],
+  .invoice-sync-grid [role="row"] > [role="cell"]:last-child {
+    border: none;
+    border-radius: 0;
+  }
+
+  .invoice-sync-grid .config-cell { grid-area: config; }
+  .invoice-sync-grid .date-cell { grid-area: date; }
+  .invoice-sync-grid .status-cell { grid-area: status; }
+  .invoice-sync-grid .diagnostic { grid-area: diagnostic; }
+  .invoice-sync-grid .actions-cell { grid-area: actions; align-items: flex-start; justify-content: flex-end; }
+}
 
 .sync-pill {
   display: inline-flex;
