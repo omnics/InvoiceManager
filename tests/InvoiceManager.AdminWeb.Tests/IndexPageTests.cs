@@ -1,6 +1,7 @@
 using InvoiceManager.AdminWeb.Pages;
 using InvoiceManager.AdminWeb.Services;
 using InvoiceManager.Core;
+using InvoiceManager.Core.Integrations.FreeAgent;
 using InvoiceManager.Infrastructure.FreeAgentAuthorization;
 using InvoiceManager.Infrastructure.MicrosoftAuthorization;
 using InvoiceManager.TestSupport;
@@ -172,6 +173,86 @@ public sealed class IndexPageTests
     }
 
     [Fact]
+    public void HasAnyAction_IsFalse_WhenUnauthorizedAndTheRowHasNoUsableOneDriveOrFreeAgentLink()
+    {
+        // No workflow authorization (so no "Edit configuration"/Resync), a bare-item-ID OneDrive
+        // fallback (not a usable link), and no matched FreeAgent bill at all - the menu must not
+        // render an ellipsis onto an empty panel.
+        var model = CreateIndexModel(hasWorkflowAuthorization: false);
+        var row = new InvoiceSyncRow(
+            new InvoiceConfigurationId("acme"), IntegrationType.MicrosoftBilling, "Acme invoice",
+            IsActive: true, ExpectedDate: new DateOnly(2025, 7, 1),
+            State: new RetrievalError("transient failure"), IsMostRecent: true);
+
+        Assert.False(model.HasAnyAction(row));
+    }
+
+    [Fact]
+    public void HasAnyAction_IsFalse_WhenUnauthorizedAndTheOnlyOneDriveValueIsTheNonUrlFallback()
+    {
+        var model = CreateIndexModel(hasWorkflowAuthorization: false);
+        var actualDetails = Actuals.Build(new DateOnly(2025, 7, 1));
+        var row = new InvoiceSyncRow(
+            new InvoiceConfigurationId("acme"), IntegrationType.MicrosoftBilling, "Acme invoice",
+            IsActive: true, ExpectedDate: new DateOnly(2025, 7, 1),
+            State: new SavedToOneDrive(actualDetails, new OneDriveDetails("01ABCDEF", "test-drive", "test-item")),
+            IsMostRecent: true);
+
+        Assert.False(model.HasAnyAction(row));
+    }
+
+    [Fact]
+    public void HasAnyAction_IsTrue_WhenUnauthorizedButTheRowHasAUsableOneDriveFileLink()
+    {
+        var model = CreateIndexModel(hasWorkflowAuthorization: false);
+        var actualDetails = Actuals.Build(new DateOnly(2025, 7, 1));
+        var row = new InvoiceSyncRow(
+            new InvoiceConfigurationId("acme"), IntegrationType.MicrosoftBilling, "Acme invoice",
+            IsActive: true, ExpectedDate: new DateOnly(2025, 7, 1),
+            State: new SavedToOneDrive(
+                actualDetails,
+                new OneDriveDetails("https://example.com/Bills/invoice.pdf", "test-drive", "test-item")),
+            IsMostRecent: true);
+
+        Assert.True(model.HasAnyAction(row));
+    }
+
+    [Fact]
+    public void HasAnyAction_IsFalse_WhenUnauthorizedAndTheMatchedBillHasNoConfiguredWebLink()
+    {
+        // FreeAgent:Subdomain isn't configured for this deployment, so FreeAgentBillUrl can't
+        // build a link even though the row has a matched bill.
+        var model = CreateIndexModel(hasWorkflowAuthorization: false, freeAgentSubdomain: "");
+        var actualDetails = Actuals.Build(new DateOnly(2025, 7, 1));
+        var row = new InvoiceSyncRow(
+            new InvoiceConfigurationId("acme"), IntegrationType.MicrosoftBilling, "Acme invoice",
+            IsActive: true, ExpectedDate: new DateOnly(2025, 7, 1),
+            State: new FreeAgentBillMatched(
+                actualDetails,
+                new OneDriveDetails("01ABCDEF", "test-drive", "test-item"),
+                new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1")),
+            IsMostRecent: true);
+
+        Assert.False(model.HasAnyAction(row));
+    }
+
+    [Fact]
+    public async Task HasAnyAction_IsTrue_WhenWorkflowAuthorizationIsPresent_RegardlessOfLinks()
+    {
+        // "Edit configuration" is always available to an authorized session, even for a row with
+        // no usable OneDrive/FreeAgent link yet. HasWorkflowAuthorization is only populated by a
+        // load, so this test has to actually run one rather than just configuring the fake store.
+        var model = CreateIndexModel(hasWorkflowAuthorization: true);
+        await model.OnGetAsync();
+        var row = new InvoiceSyncRow(
+            new InvoiceConfigurationId("acme"), IntegrationType.MicrosoftBilling, "Acme invoice",
+            IsActive: true, ExpectedDate: new DateOnly(2025, 7, 1),
+            State: new Expected(Option.None), IsMostRecent: true);
+
+        Assert.True(model.HasAnyAction(row));
+    }
+
+    [Fact]
     public async Task OnGetAsync_TogglesToDescending_WhenDescendingParamIsExplicitlyTrue()
     {
         var configA = Configurations.Build(id: new InvoiceConfigurationId("a"), invoiceDescription: "Zeta");
@@ -271,7 +352,8 @@ public sealed class IndexPageTests
         InvoiceSyncOverview? overview = null,
         IInvoiceRecordResyncTrigger? resyncTrigger = null,
         bool hasWorkflowAuthorization = true,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        string freeAgentSubdomain = "acmeltd")
     {
         var records = new InMemoryInvoiceRecordRepository();
         var model = new IndexModel(
@@ -280,7 +362,7 @@ public sealed class IndexPageTests
             new FakeMicrosoftAuthorizationStore(hasWorkflowAuthorization),
             resyncTrigger ?? new FakeInvoiceRecordResyncTrigger(),
             timeProvider ?? new FixedTimeProvider(new DateTimeOffset(2026, 9, 3, 14, 32, 31, TimeSpan.Zero)),
-            Options.Create(new FreeAgentOptions { Environment = FreeAgentEnvironment.Sandbox, Subdomain = "acmeltd" }));
+            Options.Create(new FreeAgentOptions { Environment = FreeAgentEnvironment.Sandbox, Subdomain = freeAgentSubdomain }));
 
         var httpContext = new DefaultHttpContext
         {

@@ -145,6 +145,18 @@ public class IndexModel(
         return lastSlash > schemeEnd ? fileLocation[..lastSlash] : null;
     }
 
+    /// <summary>
+    /// Whether <paramref name="row"/> has at least one action the actions menu could actually
+    /// render - the menu itself must not appear otherwise (an ellipsis opening onto an empty
+    /// panel), e.g. an unauthorized session viewing a row that hasn't reached OneDrive/FreeAgent
+    /// yet, or a saved row whose OneDrive location is the non-URL fallback and has no FreeAgent
+    /// bill link configured.
+    /// </summary>
+    public bool HasAnyAction(InvoiceSyncRow row) =>
+        HasWorkflowAuthorization ||
+        (row.OneDrive is OneDriveDetails oneDrive && (IsHttpsUrl(oneDrive.OneDriveLocation) || DeriveOneDriveFolderUrl(oneDrive.OneDriveLocation) is not null)) ||
+        (row.FreeAgentBill is FreeAgentBillIdentity bill && FreeAgentBillUrl(bill) is not null);
+
     private void SetStatus(string message, bool isWarning)
     {
         TempData["StatusMessage"] = message;

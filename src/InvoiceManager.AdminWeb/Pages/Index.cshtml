@@ -72,6 +72,8 @@
                                     @(row.Diagnostic is string diagnostic ? diagnostic : "—")
                                 </div>
                                 <div role="cell" class="actions-cell">
+                                    @if (Model.HasAnyAction(row))
+                                    {
                                     <details class="row-actions" name="row-actions">
                                         <summary aria-label="Actions for @row.DisplayName"></summary>
                                         <div class="row-actions-panel">
@@ -123,6 +125,7 @@
                                             }
                                         </div>
                                     </details>
+                                    }
                                 </div>
                             </div>
                         }
