@@ -656,7 +656,7 @@ public sealed class DueInvoiceProcessorTests
         var erroredRecord = Records.Build(
             config,
             expectedDate: new DateOnly(2025, 7, 10),
-            state: new FreeAgentError(actualDetails, oneDriveDetails, "earlier failure", Option.None));
+            state: new FreeAgentError(actualDetails, oneDriveDetails, "earlier failure", Option.None, Option.None));
         var records = new InMemoryInvoiceRecordRepository(erroredRecord);
 
         var matcher = new FakeFreeAgentBillMatcher { Result = new NoFreeAgentBillMatch("test diagnostic") };
@@ -820,6 +820,7 @@ public sealed class DueInvoiceProcessorTests
             expectedDate: new DateOnly(2025, 7, 10),
             state: new FreeAgentError(
                 actualDetails, oneDriveDetails, "earlier verification failure",
+                billIdentity,
                 new FreeAgentAttemptedAttachment(billIdentity, priorAttachment)));
         var records = new InMemoryInvoiceRecordRepository(erroredRecord);
 
@@ -894,6 +895,7 @@ public sealed class DueInvoiceProcessorTests
             expectedDate: new DateOnly(2025, 7, 10),
             state: new FreeAgentError(
                 actualDetails, oneDriveDetails, "verification failed on the prior attempt",
+                billIdentity,
                 new FreeAgentAttemptedAttachment(billIdentity, attemptedAttachment)));
         var records = new InMemoryInvoiceRecordRepository(erroredRecord);
 
@@ -959,6 +961,7 @@ public sealed class DueInvoiceProcessorTests
             expectedDate: new DateOnly(2025, 7, 10),
             state: new FreeAgentError(
                 actualDetails, oneDriveDetails, "verification failed on the prior attempt",
+                originalBillIdentity,
                 new FreeAgentAttemptedAttachment(originalBillIdentity, attemptedAttachment)));
         var records = new InMemoryInvoiceRecordRepository(erroredRecord);
 
@@ -1080,7 +1083,7 @@ public sealed class DueInvoiceProcessorTests
         var erroredRecord = Records.Build(
             config,
             expectedDate: new DateOnly(2025, 7, 10),
-            state: new FreeAgentError(actualDetails, oneDriveDetails, "FreeAgent bill locked", Option.None));
+            state: new FreeAgentError(actualDetails, oneDriveDetails, "FreeAgent bill locked", Option.None, Option.None));
         var records = new InMemoryInvoiceRecordRepository(erroredRecord);
 
         var billIdentity = new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1");

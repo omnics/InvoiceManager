@@ -689,9 +689,21 @@ public sealed class DueInvoiceProcessor(
         Option<FreeAgentAttemptedAttachment> attemptedAttachment,
         CancellationToken cancellationToken)
     {
+        // record's incoming state already carries the bill this error occurred against for
+        // every caller past the initial match (FreeAgentBillMatched/FreeAgentBillReconciled),
+        // and carries it forward from a prior FreeAgentError when resuming one (e.g. the
+        // re-download failure in ResumeFreeAgentStageAsync) - None only before matching ever
+        // found a bill.
+        Option<FreeAgentBillIdentity> bill = record.State switch
+        {
+            FreeAgentBillMatched matched => matched.Bill,
+            FreeAgentBillReconciled reconciled => reconciled.Bill,
+            FreeAgentError { Bill: FreeAgentBillIdentity existingBill } => existingBill,
+            _ => Option.None,
+        };
         var errored = record with
         {
-            State = new FreeAgentError(actualDetails, oneDriveDetails, errorMessage, attemptedAttachment),
+            State = new FreeAgentError(actualDetails, oneDriveDetails, errorMessage, bill, attemptedAttachment),
         };
         await recordRepository.ReplaceAsync(errored, cancellationToken);
         logger.LogError("FreeAgent processing for record {RecordId} failed: {ErrorMessage}", record.Id, errorMessage);

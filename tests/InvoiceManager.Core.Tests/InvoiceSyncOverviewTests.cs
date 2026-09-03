@@ -198,7 +198,7 @@ public sealed class InvoiceSyncOverviewTests
                     "invoice.pdf", 1024, "application/pdf", DateTimeOffset.UtcNow)),
             nameof(NotFound) => new NotFound("no invoice found within tolerance"),
             nameof(RetrievalError) => new RetrievalError("transient failure"),
-            nameof(FreeAgentError) => new FreeAgentError(actualDetails, oneDrive, "reconciliation failed", Option.None),
+            nameof(FreeAgentError) => new FreeAgentError(actualDetails, oneDrive, "reconciliation failed", Option.None, Option.None),
             nameof(FreeAgentInterventionPending) => new FreeAgentInterventionPending(
                 actualDetails, oneDrive, new FreeAgentInterventionId("intervention-1")),
             nameof(Expected) => new Expected(Option.None),
@@ -295,6 +295,7 @@ public sealed class InvoiceSyncOverviewTests
                 Actuals.Build(),
                 oneDrive,
                 "verification failed",
+                bill,
                 new FreeAgentAttemptedAttachment(
                     bill,
                     new Integrations.FreeAgent.FreeAgentAttachmentMetadata(
@@ -309,14 +310,38 @@ public sealed class InvoiceSyncOverviewTests
     }
 
     [Fact]
-    public async Task GetRowsAsync_ReportsNoFreeAgentBill_ForAFreeAgentErrorWithNoAttemptedAttachment()
+    public async Task GetRowsAsync_ExposesTheFreeAgentBill_ForAFreeAgentErrorWithAKnownBillButNoAttemptedAttachment()
     {
+        // A lock, rejection, or reconciliation failure knows exactly which bill it was acting on
+        // even though no upload was ever attempted (or completed) - that identity must not be
+        // lost just because there's no attachment proof to go with it.
+        var config = Configurations.Build(id: new InvoiceConfigurationId("acme"));
+        var oneDrive = new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item");
+        var bill = new Integrations.FreeAgent.FreeAgentBillIdentity("https://api.freeagent.com/v2/bills/1");
+        var record = Records.Build(
+            config,
+            expectedDate: new DateOnly(2025, 7, 1),
+            state: new FreeAgentError(Actuals.Build(), oneDrive, "FreeAgent bill locked", bill, Option.None));
+        var records = new InMemoryInvoiceRecordRepository(record);
+        var overview = new InvoiceSyncOverview(
+            new InvoiceConfigurationService(new FakeConfigurationRepository(config)), records);
+
+        var rows = await overview.GetRowsAsync();
+
+        Assert.True(Assert.Single(rows).FreeAgentBill is Integrations.FreeAgent.FreeAgentBillIdentity found && found == bill);
+    }
+
+    [Fact]
+    public async Task GetRowsAsync_ReportsNoFreeAgentBill_ForAFreeAgentErrorWithNoKnownBill()
+    {
+        // A re-download failure resuming a fresh FreeAgent stage, before matching ever found a
+        // bill in the first place.
         var config = Configurations.Build(id: new InvoiceConfigurationId("acme"));
         var oneDrive = new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item");
         var record = Records.Build(
             config,
             expectedDate: new DateOnly(2025, 7, 1),
-            state: new FreeAgentError(Actuals.Build(), oneDrive, "locked", Option.None));
+            state: new FreeAgentError(Actuals.Build(), oneDrive, "Could not re-download the invoice.", Option.None, Option.None));
         var records = new InMemoryInvoiceRecordRepository(record);
         var overview = new InvoiceSyncOverview(
             new InvoiceConfigurationService(new FakeConfigurationRepository(config)), records);

@@ -1,3 +1,6 @@
+using System.Text.RegularExpressions;
+using Microsoft.Extensions.Options;
+
 namespace InvoiceManager.Infrastructure.FreeAgentAuthorization;
 
 /// <summary>
@@ -25,4 +28,29 @@ public sealed class FreeAgentOptions
     /// building a browsable bill link rather than guessing at one.
     /// </summary>
     public string Subdomain { get; set; } = "";
+}
+
+/// <summary>
+/// Validates <see cref="FreeAgentOptions.Subdomain"/>'s shape when set. It composes directly
+/// into a hostname (see <see cref="FreeAgentHosts.AppBaseUri"/>) - an unvalidated value
+/// containing whitespace, a slash, or a query character could throw when rendered, or build a
+/// link to a host outside FreeAgent entirely.
+/// </summary>
+public sealed partial class FreeAgentOptionsValidator : IValidateOptions<FreeAgentOptions>
+{
+    public ValidateOptionsResult Validate(string? name, FreeAgentOptions options)
+    {
+        if (string.IsNullOrEmpty(options.Subdomain))
+        {
+            return ValidateOptionsResult.Success;
+        }
+
+        return SubdomainPattern().IsMatch(options.Subdomain)
+            ? ValidateOptionsResult.Success
+            : ValidateOptionsResult.Fail(
+                "FreeAgent:Subdomain must contain only letters, digits, and hyphens (it becomes part of a hostname).");
+    }
+
+    [GeneratedRegex("^[a-zA-Z0-9-]+$")]
+    private static partial Regex SubdomainPattern();
 }

@@ -214,6 +214,7 @@ internal sealed class InvoiceRecordDocument
             RequiredActualDetails(), RequiredOneDriveDetails(), RequiredFreeAgentInterventionId()),
         nameof(FreeAgentError) => new FreeAgentError(
             RequiredActualDetails(), RequiredOneDriveDetails(), LastError ?? string.Empty,
+            FreeAgentBillUrl is { } billUrl ? new FreeAgentBillIdentity(billUrl) : Option.None,
             FreeAgentBillUrl is { } attemptedBillUrl && FreeAgentAttachment is { } attemptedAttachment
                 ? new FreeAgentAttemptedAttachment(new FreeAgentBillIdentity(attemptedBillUrl), attemptedAttachment.ToMetadata())
                 : Option.None),
@@ -334,11 +335,9 @@ internal sealed class InvoiceRecordDocument
             ActualDetails = ActualInvoiceDetailsDocument.FromDetails(freeAgentError.ActualDetails),
             OneDriveDetails = OneDriveDetailsDocument.FromDetails(freeAgentError.OneDriveDetails),
             LastError = freeAgentError.ErrorMessage,
-            FreeAgentBillUrl = freeAgentError.AttemptedAttachment is FreeAgentAttemptedAttachment attempted
-                ? attempted.Bill.Url.OriginalString
-                : null,
-            FreeAgentAttachment = freeAgentError.AttemptedAttachment is FreeAgentAttemptedAttachment attempted2
-                ? FreeAgentAttachmentMetadataDocument.FromMetadata(attempted2.Attachment)
+            FreeAgentBillUrl = freeAgentError.Bill switch { FreeAgentBillIdentity bill => bill.Url.OriginalString, None => null },
+            FreeAgentAttachment = freeAgentError.AttemptedAttachment is FreeAgentAttemptedAttachment attempted
+                ? FreeAgentAttachmentMetadataDocument.FromMetadata(attempted.Attachment)
                 : null,
         },
     };

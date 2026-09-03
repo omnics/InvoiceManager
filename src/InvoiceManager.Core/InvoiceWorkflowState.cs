@@ -127,6 +127,13 @@ public sealed record FreeAgentAttemptedAttachment(FreeAgentBillIdentity Bill, Fr
 /// and attachment as one step, rather than restarting OneDrive reconciliation or
 /// source retrieval from scratch.
 /// </summary>
+/// <param name="Bill">
+/// The bill this error occurred against, if matching had already found one by the time it
+/// struck - a lock, a business rejection, or a reconciliation failure all know exactly which
+/// bill they were acting on even though none of them ever attempted (or completed) an upload.
+/// <see cref="Core.None"/> only for a failure before matching ever found a bill (e.g. the
+/// re-download that precedes a fresh match attempt).
+/// </param>
 /// <param name="AttemptedAttachment">
 /// Proof of an attachment this run genuinely POSTed to FreeAgent before erroring - set only
 /// when the upload itself succeeded (bound to the bill it was uploaded to), whether the
@@ -145,6 +152,7 @@ public sealed record FreeAgentError(
     ActualInvoiceDetails ActualDetails,
     OneDriveDetails OneDriveDetails,
     string ErrorMessage,
+    Option<FreeAgentBillIdentity> Bill,
     Option<FreeAgentAttemptedAttachment> AttemptedAttachment);
 
 /// <summary>

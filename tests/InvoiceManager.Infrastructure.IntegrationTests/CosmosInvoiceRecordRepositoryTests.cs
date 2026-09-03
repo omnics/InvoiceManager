@@ -228,6 +228,7 @@ public sealed class CosmosInvoiceRecordRepositoryTests : IAsyncLifetime
                 BuildActualDetails(),
                 new OneDriveDetails("/drives/test/root:/Bills/Test/fa-error.pdf", "test-drive", "fa-error-item"),
                 "FreeAgent bill locked",
+                Option.None,
                 Option.None));
         var freeAgentInterventionPendingNotDue = BuildRecord(
             new InvoiceConfigurationId("freeagent-intervention-not-due"),
