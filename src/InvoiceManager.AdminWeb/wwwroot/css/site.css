@@ -783,6 +783,16 @@ pre {
     background: none;
   }
 
+  /* The desktop edge-border rules below both have higher specificity than the blanket
+     [role="cell"] reset above (an extra class on the stripe-cell selector, an extra
+     :last-child pseudo-class on the last-cell selector), so they'd otherwise still win at
+     this width and leave stray vertical borders/radii on cells inside the new card. */
+  .invoice-sync-grid .stripe-cell + [role="cell"],
+  .invoice-sync-grid [role="row"] > [role="cell"]:last-child {
+    border: none;
+    border-radius: 0;
+  }
+
   .invoice-sync-grid .config-cell { grid-area: config; }
   .invoice-sync-grid .date-cell { grid-area: date; }
   .invoice-sync-grid .status-cell { grid-area: status; }
