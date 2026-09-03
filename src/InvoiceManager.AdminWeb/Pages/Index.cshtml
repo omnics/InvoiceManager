@@ -16,7 +16,7 @@
 
     @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
     {
-        <div class="notice">@Model.StatusMessage</div>
+        <div class="notice@(Model.StatusIsWarning ? " warning" : "")">@Model.StatusMessage</div>
     }
     @if (!Model.HasWorkflowAuthorization)
     {
@@ -117,15 +117,15 @@
     </section>
 
     <section class="status-panel" style="margin-top:24px;">
-        <h2>Invoice workflow</h2>
+        <h2>Manually process invoices</h2>
         <p class="status-label">
-            Manually run expected record generation and due-invoice processing in the Functions app.
+            Invoice processing runs at the start of every hour. Use this button to trigger an extra run of the processing loop.
         </p>
         <form method="post" class="actions">
             <input type="hidden" name="sort" value="@Model.Sort" />
             <input type="hidden" name="descending" value="@Model.SortDescending" />
             <button asp-page-handler="GenerateExpectedRecords" class="secondary-action">
-                Generate expected records
+                Start
             </button>
         </form>
     </section>

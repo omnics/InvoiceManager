@@ -47,23 +47,23 @@ public sealed class GenerateExpectedRecordsHttp(
             processingResults.Count(r => r is ProcessingFreeAgentInterventionRequired),
             processingResults.Count(r => r is ProcessingFreeAgentConflict));
 
-        var body = new RunResultDto(
+        var body = new ExpectedRecordGenerationRunWire(
             generationResults.Select(result => result switch
             {
-                GenerationSucceeded succeeded => new ConfigurationResultDto(succeeded.ConfigurationId.Value, "Succeeded", null),
-                GenerationFailed failed => new ConfigurationResultDto(failed.ConfigurationId.Value, "Failed", failed.Exception.Message),
+                GenerationSucceeded succeeded => new ConfigurationOutcomeWire(succeeded.ConfigurationId.Value, "Succeeded", null),
+                GenerationFailed failed => new ConfigurationOutcomeWire(failed.ConfigurationId.Value, "Failed", failed.Exception.Message),
             }).ToList(),
             processingResults.Select(result => result switch
             {
-                ProcessingSucceeded saved => new RecordResultDto(saved.RecordId.Value, "SavedToOneDrive", null),
-                ProcessingReconciled reconciled => new RecordResultDto(reconciled.RecordId.Value, "ReconciledFromOneDrive", null),
-                ProcessingNoMatch noMatch => new RecordResultDto(noMatch.RecordId.Value, "NoMatch", null),
-                ProcessingNotFound notFound => new RecordResultDto(notFound.RecordId.Value, "NotFound", null),
-                ProcessingFailed failed => new RecordResultDto(failed.RecordId.Value, "Failed", failed.Exception.Message),
-                ProcessingFreeAgentAmbiguous ambiguous => new RecordResultDto(ambiguous.RecordId.Value, "FreeAgentAmbiguous", null),
-                ProcessingFreeAgentInterventionRequired intervention => new RecordResultDto(
+                ProcessingSucceeded saved => new RecordOutcomeWire(saved.RecordId.Value, "SavedToOneDrive", null),
+                ProcessingReconciled reconciled => new RecordOutcomeWire(reconciled.RecordId.Value, "ReconciledFromOneDrive", null),
+                ProcessingNoMatch noMatch => new RecordOutcomeWire(noMatch.RecordId.Value, "NoMatch", null),
+                ProcessingNotFound notFound => new RecordOutcomeWire(notFound.RecordId.Value, "NotFound", null),
+                ProcessingFailed failed => new RecordOutcomeWire(failed.RecordId.Value, "Failed", failed.Exception.Message),
+                ProcessingFreeAgentAmbiguous ambiguous => new RecordOutcomeWire(ambiguous.RecordId.Value, "FreeAgentAmbiguous", null),
+                ProcessingFreeAgentInterventionRequired intervention => new RecordOutcomeWire(
                     intervention.RecordId.Value, "FreeAgentInterventionRequired", null),
-                ProcessingFreeAgentConflict conflict => new RecordResultDto(conflict.RecordId.Value, "FreeAgentConflict", conflict.Reason),
+                ProcessingFreeAgentConflict conflict => new RecordOutcomeWire(conflict.RecordId.Value, "FreeAgentConflict", conflict.Reason),
             }).ToList());
 
         // Set the status as part of the write: under the ASP.NET Core integration
@@ -77,13 +77,4 @@ public sealed class GenerateExpectedRecordsHttp(
         await response.WriteStringAsync(JsonSerializer.Serialize(body, SerializerOptions), cancellationToken);
         return response;
     }
-
-    // Serialization shapes for the 207 Multi-Status body; Error is null for successes.
-    private sealed record RunResultDto(
-        IReadOnlyList<ConfigurationResultDto> Generation,
-        IReadOnlyList<RecordResultDto> Processing);
-
-    private sealed record ConfigurationResultDto(string ConfigurationId, string Status, string? Error);
-
-    private sealed record RecordResultDto(string RecordId, string Status, string? Error);
 }

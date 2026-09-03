@@ -1,5 +1,7 @@
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using Azure.Core;
+using InvoiceManager.Core;
 
 namespace InvoiceManager.AdminWeb.Services;
 
@@ -13,8 +15,14 @@ public interface IExpectedRecordGenerationTrigger
     Task<ExpectedRecordGenerationTriggerResult> TriggerAsync(CancellationToken cancellationToken);
 }
 
-/// <summary>The Functions endpoint accepted the request and returned a success status.</summary>
-public sealed record ExpectedRecordGenerationTriggered(int StatusCode);
+/// <summary>The Functions endpoint ran the request and every configuration/record it processed succeeded.</summary>
+public sealed record ExpectedRecordGenerationTriggered;
+
+/// <summary>
+/// The Functions endpoint ran the request (HTTP 207), but its response body reported at least
+/// one configuration or record failure - the run started, but wasn't clean.
+/// </summary>
+public sealed record ExpectedRecordGenerationCompletedWithErrors(IReadOnlyList<string> Errors);
 
 /// <summary>No Functions base URL was configured, so no request could be made.</summary>
 public sealed record ExpectedRecordGenerationNotConfigured;
@@ -28,6 +36,7 @@ public sealed record ExpectedRecordGenerationFailed(string Message);
 /// </summary>
 public union ExpectedRecordGenerationTriggerResult(
     ExpectedRecordGenerationTriggered,
+    ExpectedRecordGenerationCompletedWithErrors,
     ExpectedRecordGenerationNotConfigured,
     ExpectedRecordGenerationFailed);
 
@@ -40,6 +49,14 @@ public sealed class FunctionsExpectedRecordGenerationTrigger(
 {
     // Isolated-worker HTTP functions are exposed under /api/{FunctionName}.
     private const string TriggerPath = "/api/GenerateExpectedRecordsHttp";
+
+    // The only statuses GenerateExpectedRecordsHttp reports that mean "nothing for the
+    // operator to look at": a completed generation/save, or a record still legitimately
+    // waiting on its tolerance window (NoMatch - see ProcessingNoMatch). Everything else -
+    // including a status this AdminWeb build doesn't recognise yet - is treated as needing
+    // attention, since staying silent on an unrecognised status would silently hide it.
+    private static readonly HashSet<string> CleanStatuses =
+        new(StringComparer.Ordinal) { "Succeeded", "SavedToOneDrive", "ReconciledFromOneDrive", "NoMatch" };
 
     public async Task<ExpectedRecordGenerationTriggerResult> TriggerAsync(CancellationToken cancellationToken)
     {
@@ -56,18 +73,34 @@ public sealed class FunctionsExpectedRecordGenerationTrigger(
             await AuthorizeAsync(request, cancellationToken);
 
             using var response = await httpClient.SendAsync(request, cancellationToken);
-            if (response.IsSuccessStatusCode)
+            if (!response.IsSuccessStatusCode)
             {
-                return new ExpectedRecordGenerationTriggered((int)response.StatusCode);
+                return new ExpectedRecordGenerationFailed(
+                    $"The Functions app returned {(int)response.StatusCode} {response.ReasonPhrase}.");
             }
 
-            return new ExpectedRecordGenerationFailed(
-                $"The Functions app returned {(int)response.StatusCode} {response.ReasonPhrase}.");
+            // The endpoint always answers 207 regardless of per-item outcome (see
+            // GenerateExpectedRecordsHttp), so a success status here only means the run
+            // happened - whether it was clean is in the body.
+            var run = await response.Content.ReadFromJsonAsync<ExpectedRecordGenerationRunWire>(cancellationToken);
+            var errors = run is null
+                ? []
+                : run.Generation
+                    .Where(g => !CleanStatuses.Contains(g.Status))
+                    .Select(g => $"Configuration {g.ConfigurationId}: {g.Error ?? g.Status}")
+                    .Concat(run.Processing
+                        .Where(p => !CleanStatuses.Contains(p.Status))
+                        .Select(p => $"Record {p.RecordId}: {p.Error ?? p.Status}"))
+                    .ToList();
+
+            return errors.Count > 0
+                ? new ExpectedRecordGenerationCompletedWithErrors(errors)
+                : new ExpectedRecordGenerationTriggered();
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Triggering expected record generation failed.");
-            return new ExpectedRecordGenerationFailed("The Functions app is not reachable.");
+            return new ExpectedRecordGenerationFailed("The Functions app is not reachable or returned an unexpected response.");
         }
     }
 
