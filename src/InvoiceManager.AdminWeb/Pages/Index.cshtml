@@ -67,7 +67,7 @@
                                 <div role="cell" class="status-cell">
                                     <span class="sync-pill @BucketPillClass(row.Bucket)" title="@row.StateName">@BucketLabel(row.Bucket)</span>
                                 </div>
-                                <div role="cell" class="diagnostic@(row.Bucket == InvoiceSyncBucket.NeedsAttention ? " is-error" : "")">
+                                <div role="cell" class="diagnostic@(row.Bucket == InvoiceSyncBucket.NeedsAttention ? " is-error" : "")@(row.Diagnostic is string ? "" : " diagnostic-empty")">
                                     @(row.Diagnostic is string diagnostic ? diagnostic : "—")
                                 </div>
                                 <div role="cell" class="actions-cell">
