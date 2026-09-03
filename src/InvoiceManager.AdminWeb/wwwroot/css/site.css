@@ -798,6 +798,12 @@ pre {
   .invoice-sync-grid .status-cell { grid-area: status; }
   .invoice-sync-grid .diagnostic { grid-area: diagnostic; }
   .invoice-sync-grid .actions-cell { grid-area: actions; align-items: flex-start; justify-content: flex-end; }
+
+  /* The "—" placeholder is only meaningful as a column filler on desktop, where every row
+     needs a value to keep columns aligned - once a card has no columns to align, an empty
+     diagnostic should take up no space rather than leave a blank line. Removing the cell from
+     layout entirely (not just hiding its text) collapses its grid row and row-gap too. */
+  .invoice-sync-grid .diagnostic.diagnostic-empty { display: none; }
 }
 
 .sync-pill {
