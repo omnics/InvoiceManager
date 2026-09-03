@@ -656,7 +656,7 @@ public sealed class DueInvoiceProcessorTests
         var erroredRecord = Records.Build(
             config,
             expectedDate: new DateOnly(2025, 7, 10),
-            state: new FreeAgentError(actualDetails, oneDriveDetails, "earlier failure", Option.None, Option.None));
+            state: new FreeAgentError(actualDetails, oneDriveDetails, "earlier failure", Option.None));
         var records = new InMemoryInvoiceRecordRepository(erroredRecord);
 
         var matcher = new FakeFreeAgentBillMatcher { Result = new NoFreeAgentBillMatch("test diagnostic") };
@@ -820,8 +820,7 @@ public sealed class DueInvoiceProcessorTests
             expectedDate: new DateOnly(2025, 7, 10),
             state: new FreeAgentError(
                 actualDetails, oneDriveDetails, "earlier verification failure",
-                billIdentity,
-                new FreeAgentAttemptedAttachment(billIdentity, priorAttachment)));
+                new FreeAgentErrorBillContext(billIdentity, priorAttachment)));
         var records = new InMemoryInvoiceRecordRepository(erroredRecord);
 
         var bill = new FreeAgentBillSnapshot(
@@ -859,14 +858,14 @@ public sealed class DueInvoiceProcessorTests
             return;
         }
 
-        if (error.AttemptedAttachment is not FreeAgentAttemptedAttachment attemptedAttachment)
+        if (error.BillContext is not FreeAgentErrorBillContext context)
         {
-            Assert.Fail("Expected AttemptedAttachment to preserve the prior same-bill proof despite this run's unrelated failure.");
+            Assert.Fail("Expected BillContext to preserve the prior same-bill proof despite this run's unrelated failure.");
             return;
         }
 
-        Assert.Equal(billIdentity, attemptedAttachment.Bill);
-        Assert.Equal(priorAttachment, attemptedAttachment.Attachment);
+        Assert.Equal(billIdentity, context.Bill);
+        Assert.True(context.AttemptedAttachment is FreeAgentAttachmentMetadata attachment && attachment == priorAttachment);
     }
 
     [Fact]
@@ -895,8 +894,7 @@ public sealed class DueInvoiceProcessorTests
             expectedDate: new DateOnly(2025, 7, 10),
             state: new FreeAgentError(
                 actualDetails, oneDriveDetails, "verification failed on the prior attempt",
-                billIdentity,
-                new FreeAgentAttemptedAttachment(billIdentity, attemptedAttachment)));
+                new FreeAgentErrorBillContext(billIdentity, attemptedAttachment)));
         var records = new InMemoryInvoiceRecordRepository(erroredRecord);
 
         var bill = new FreeAgentBillSnapshot(
@@ -961,8 +959,7 @@ public sealed class DueInvoiceProcessorTests
             expectedDate: new DateOnly(2025, 7, 10),
             state: new FreeAgentError(
                 actualDetails, oneDriveDetails, "verification failed on the prior attempt",
-                originalBillIdentity,
-                new FreeAgentAttemptedAttachment(originalBillIdentity, attemptedAttachment)));
+                new FreeAgentErrorBillContext(originalBillIdentity, attemptedAttachment)));
         var records = new InMemoryInvoiceRecordRepository(erroredRecord);
 
         var differentBillIdentity = new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/2");
@@ -1053,14 +1050,14 @@ public sealed class DueInvoiceProcessorTests
             return;
         }
 
-        if (error.AttemptedAttachment is not FreeAgentAttemptedAttachment attemptedAttachment)
+        if (error.BillContext is not FreeAgentErrorBillContext context)
         {
-            Assert.Fail("Expected AttemptedAttachment to preserve proof of the successful upload despite the persistence failure.");
+            Assert.Fail("Expected BillContext to preserve proof of the successful upload despite the persistence failure.");
             return;
         }
 
-        Assert.Equal(billIdentity, attemptedAttachment.Bill);
-        Assert.Equal(attached, attemptedAttachment.Attachment);
+        Assert.Equal(billIdentity, context.Bill);
+        Assert.True(context.AttemptedAttachment is FreeAgentAttachmentMetadata metadata && metadata == attached);
     }
 
     [Fact]
@@ -1083,7 +1080,7 @@ public sealed class DueInvoiceProcessorTests
         var erroredRecord = Records.Build(
             config,
             expectedDate: new DateOnly(2025, 7, 10),
-            state: new FreeAgentError(actualDetails, oneDriveDetails, "FreeAgent bill locked", Option.None, Option.None));
+            state: new FreeAgentError(actualDetails, oneDriveDetails, "FreeAgent bill locked", Option.None));
         var records = new InMemoryInvoiceRecordRepository(erroredRecord);
 
         var billIdentity = new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1");

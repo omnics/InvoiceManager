@@ -48,9 +48,13 @@ public sealed partial class FreeAgentOptionsValidator : IValidateOptions<FreeAge
         return SubdomainPattern().IsMatch(options.Subdomain)
             ? ValidateOptionsResult.Success
             : ValidateOptionsResult.Fail(
-                "FreeAgent:Subdomain must contain only letters, digits, and hyphens (it becomes part of a hostname).");
+                "FreeAgent:Subdomain must be a valid DNS label: 1-63 characters, letters/digits/hyphens only, " +
+                "and must not start or end with a hyphen.");
     }
 
-    [GeneratedRegex("^[a-zA-Z0-9-]+$")]
+    // A single DNS label (RFC 1035): 1-63 characters, alphanumeric first/last, hyphens only
+    // internally - anything looser (a bare "-", a leading/trailing hyphen, over 63 characters)
+    // is not a real hostname component, even though Uri itself would accept some of these.
+    [GeneratedRegex("^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$")]
     private static partial Regex SubdomainPattern();
 }

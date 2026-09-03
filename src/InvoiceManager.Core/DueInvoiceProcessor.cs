@@ -273,10 +273,11 @@ public sealed class DueInvoiceProcessor(
         Activity? recordActivity,
         CancellationToken cancellationToken)
     {
-        (ActualInvoiceDetails actualDetails, OneDriveDetails oneDriveDetails, Option<FreeAgentAttemptedAttachment> existingAttemptedAttachment) = record.State switch
+        (ActualInvoiceDetails actualDetails, OneDriveDetails oneDriveDetails, Option<FreeAgentAttachmentMetadata> existingAttemptedAttachment) = record.State switch
         {
             FreeAgentMatchExpected matchExpected => (matchExpected.ActualDetails, matchExpected.OneDriveDetails, Option.None),
-            FreeAgentError error => (error.ActualDetails, error.OneDriveDetails, error.AttemptedAttachment),
+            FreeAgentError { BillContext: FreeAgentErrorBillContext context } error => (error.ActualDetails, error.OneDriveDetails, context.AttemptedAttachment),
+            FreeAgentError error => (error.ActualDetails, error.OneDriveDetails, Option.None),
             _ => throw new InvalidOperationException(
                 $"ResumeFreeAgentStageAsync called for record {record.Id} in unsupported state '{record.State.GetType().Name}'."),
         };
@@ -393,9 +394,9 @@ public sealed class DueInvoiceProcessor(
         // doesn't undo the successful FreeAgent-side upload it followed. Seeded from a prior
         // attempt's proof when this retry rematches the same bill, so a fresh reconciliation
         // failure striking before the upload step is reached doesn't discard it for nothing.
-        Option<FreeAgentAttemptedAttachment> lastKnownAttachment =
-            savedRecord.State is FreeAgentError { AttemptedAttachment: FreeAgentAttemptedAttachment seed } && seed.Bill == billIdentity
-                ? seed
+        Option<FreeAgentAttachmentMetadata> lastKnownAttachment =
+            savedRecord.State is FreeAgentError { BillContext: FreeAgentErrorBillContext seed } && seed.Bill == billIdentity
+                ? seed.AttemptedAttachment
                 : Option.None;
 
         try
@@ -464,9 +465,9 @@ public sealed class DueInvoiceProcessor(
             recordActivity?.AddEvent(new ActivityEvent("state_freeagent_bill_reconciled"));
 
             // expectedExisting is only the exact metadata this record itself recorded having
-            // POSTed to this exact bill (see FreeAgentAttemptedAttachment, which survives a
-            // retry via the record's persisted state) - never fabricated from what we're about
-            // to upload, and never carried over from a different bill a previous retry matched.
+            // POSTed to this exact bill (see FreeAgentErrorBillContext, which survives a retry
+            // via the record's persisted state) - never fabricated from what we're about to
+            // upload, and never carried over from a different bill a previous retry matched.
             // Any attachment already on the bill that isn't recorded as genuinely ours can only
             // be someone else's, or an earlier attempt whose outcome we don't actually know (a
             // lock, a business rejection, a technical exception) - always None in those cases.
@@ -475,9 +476,8 @@ public sealed class DueInvoiceProcessor(
             // e.g. after this InvoiceRecord's own history was lost - so passing Option.None here
             // means "no record-backed proof", not "treat any existing attachment as foreign".
             Option<FreeAgentAttachmentMetadata> expectedExisting =
-                savedRecord.State is FreeAgentError { AttemptedAttachment: FreeAgentAttemptedAttachment attempted } &&
-                attempted.Bill == billIdentity
-                    ? attempted.Attachment
+                savedRecord.State is FreeAgentError { BillContext: FreeAgentErrorBillContext context } && context.Bill == billIdentity
+                    ? context.AttemptedAttachment
                     : Option.None;
 
             var uploadResult = await freeAgentAttachmentUploader.UploadAsync(
@@ -486,15 +486,15 @@ public sealed class DueInvoiceProcessor(
             switch (uploadResult)
             {
                 case FreeAgentAttachmentUploaded uploaded:
-                    lastKnownAttachment = new FreeAgentAttemptedAttachment(billIdentity, uploaded.New);
+                    lastKnownAttachment = uploaded.New;
                     return await CompleteFreeAgentAttachAsync(
                         reconciledRecord, actualDetails, oneDriveDetails, billIdentity, uploaded.New, recordActivity, cancellationToken);
                 case FreeAgentAttachmentReplaced replaced:
-                    lastKnownAttachment = new FreeAgentAttemptedAttachment(billIdentity, replaced.New);
+                    lastKnownAttachment = replaced.New;
                     return await CompleteFreeAgentAttachAsync(
                         reconciledRecord, actualDetails, oneDriveDetails, billIdentity, replaced.New, recordActivity, cancellationToken);
                 case FreeAgentAttachmentAlreadyCorrect already:
-                    lastKnownAttachment = new FreeAgentAttemptedAttachment(billIdentity, already.Existing);
+                    lastKnownAttachment = already.Existing;
                     return await CompleteFreeAgentAttachAsync(
                         reconciledRecord, actualDetails, oneDriveDetails, billIdentity, already.Existing, recordActivity, cancellationToken);
                 case FreeAgentAttachmentUnexpectedExisting:
@@ -515,10 +515,8 @@ public sealed class DueInvoiceProcessor(
                         // upload whose read-back verification failed), so this exact metadata is
                         // genuine proof of our own attachment on this bill - safe to hand back as
                         // expectedExisting on the next retry, as long as it still matches.
-                        var attemptedAttachment = new FreeAgentAttemptedAttachment(
-                            billIdentity,
-                            new FreeAgentAttachmentMetadata(
-                                fileName, pdfContent.Length, FreeAgentAttachmentContentType.Pdf, timeProvider.GetUtcNow()));
+                        var attemptedAttachment = new FreeAgentAttachmentMetadata(
+                            fileName, pdfContent.Length, FreeAgentAttachmentContentType.Pdf, timeProvider.GetUtcNow());
                         await MarkFreeAgentErrorAsync(
                             reconciledRecord, actualDetails, oneDriveDetails, verificationFailed.Detail, attemptedAttachment, cancellationToken);
                         return new ProcessingFreeAgentConflict(reconciledRecord.Id, verificationFailed.Detail);
@@ -618,7 +616,7 @@ public sealed class DueInvoiceProcessor(
             {
                 var alreadyPending = record with
                 {
-                    State = new FreeAgentInterventionPending(actualDetails, oneDriveDetails, existing.Id),
+                    State = new FreeAgentInterventionPending(actualDetails, oneDriveDetails, details.Bill, existing.Id),
                 };
                 await recordRepository.ReplaceAsync(alreadyPending, cancellationToken);
                 return new ProcessingFreeAgentInterventionRequired(record.Id, existing.Id);
@@ -631,7 +629,7 @@ public sealed class DueInvoiceProcessor(
 
         var pending = record with
         {
-            State = new FreeAgentInterventionPending(actualDetails, oneDriveDetails, interventionId),
+            State = new FreeAgentInterventionPending(actualDetails, oneDriveDetails, details.Bill, interventionId),
         };
         await recordRepository.ReplaceAsync(pending, cancellationToken);
         logger.LogWarning(
@@ -686,7 +684,7 @@ public sealed class DueInvoiceProcessor(
         ActualInvoiceDetails actualDetails,
         OneDriveDetails oneDriveDetails,
         string errorMessage,
-        Option<FreeAgentAttemptedAttachment> attemptedAttachment,
+        Option<FreeAgentAttachmentMetadata> attemptedAttachment,
         CancellationToken cancellationToken)
     {
         // record's incoming state already carries the bill this error occurred against for
@@ -698,12 +696,15 @@ public sealed class DueInvoiceProcessor(
         {
             FreeAgentBillMatched matched => matched.Bill,
             FreeAgentBillReconciled reconciled => reconciled.Bill,
-            FreeAgentError { Bill: FreeAgentBillIdentity existingBill } => existingBill,
+            FreeAgentError { BillContext: FreeAgentErrorBillContext existing } => existing.Bill,
             _ => Option.None,
         };
+        Option<FreeAgentErrorBillContext> billContext = bill is FreeAgentBillIdentity knownBill
+            ? new FreeAgentErrorBillContext(knownBill, attemptedAttachment)
+            : Option.None;
         var errored = record with
         {
-            State = new FreeAgentError(actualDetails, oneDriveDetails, errorMessage, bill, attemptedAttachment),
+            State = new FreeAgentError(actualDetails, oneDriveDetails, errorMessage, billContext),
         };
         await recordRepository.ReplaceAsync(errored, cancellationToken);
         logger.LogError("FreeAgent processing for record {RecordId} failed: {ErrorMessage}", record.Id, errorMessage);

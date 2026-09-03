@@ -110,6 +110,20 @@ public sealed class InvoiceRecordDocumentTests
     }
 
     [Fact]
+    public void RoundTrip_PreservesRecord_WhenStateIsFreeAgentInterventionPending()
+    {
+        var record = BuildRecord(new FreeAgentInterventionPending(
+            SampleActualDetails,
+            new OneDriveDetails(OneDriveLocation, DriveId, ItemId),
+            new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1"),
+            new FreeAgentInterventionId("intervention-1")));
+
+        var roundTripped = InvoiceRecordDocument.FromRecord(record).ToRecord();
+
+        Assert.Equal(record, roundTripped);
+    }
+
+    [Fact]
     public void RoundTrip_PreservesRecord_WhenStateIsFreeAgentError_WithNoKnownBill()
     {
         // A re-download failure resuming a fresh FreeAgent stage, before matching ever found a
@@ -118,7 +132,6 @@ public sealed class InvoiceRecordDocumentTests
             SampleActualDetails,
             new OneDriveDetails(OneDriveLocation, DriveId, ItemId),
             "Could not re-download the invoice from OneDrive.",
-            Option.None,
             Option.None));
 
         var roundTripped = InvoiceRecordDocument.FromRecord(record).ToRecord();
@@ -135,8 +148,9 @@ public sealed class InvoiceRecordDocumentTests
             SampleActualDetails,
             new OneDriveDetails(OneDriveLocation, DriveId, ItemId),
             "FreeAgent bill locked",
-            new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1"),
-            Option.None));
+            new FreeAgentErrorBillContext(
+                new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1"),
+                Option.None)));
 
         var roundTripped = InvoiceRecordDocument.FromRecord(record).ToRecord();
 
@@ -151,8 +165,7 @@ public sealed class InvoiceRecordDocumentTests
             SampleActualDetails,
             new OneDriveDetails(OneDriveLocation, DriveId, ItemId),
             "verification failed on the prior attempt",
-            bill,
-            new FreeAgentAttemptedAttachment(
+            new FreeAgentErrorBillContext(
                 bill,
                 new FreeAgentAttachmentMetadata(
                     "2025-07-05 Test Invoice G152207778 £9.99 exc.pdf", 1024, "application/pdf",

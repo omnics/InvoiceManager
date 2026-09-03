@@ -213,10 +213,11 @@ public sealed class InvoiceSyncOverview(
         FreeAgentBillMatched matched => matched.Bill,
         FreeAgentBillReconciled reconciledBill => reconciledBill.Bill,
         FreeAgentAttached attached => attached.Bill,
+        FreeAgentInterventionPending pending => pending.Bill,
         // Matching had already found a bill before this run errored - a lock, a rejection, or a
         // reconciliation failure all know exactly which bill they were acting on, worth
         // surfacing even though the record needs attention.
-        FreeAgentError { Bill: FreeAgentBillIdentity bill } => bill,
+        FreeAgentError { BillContext: FreeAgentErrorBillContext context } => context.Bill,
         _ => Option.None,
     };
 }

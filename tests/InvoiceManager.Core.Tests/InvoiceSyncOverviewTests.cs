@@ -198,9 +198,9 @@ public sealed class InvoiceSyncOverviewTests
                     "invoice.pdf", 1024, "application/pdf", DateTimeOffset.UtcNow)),
             nameof(NotFound) => new NotFound("no invoice found within tolerance"),
             nameof(RetrievalError) => new RetrievalError("transient failure"),
-            nameof(FreeAgentError) => new FreeAgentError(actualDetails, oneDrive, "reconciliation failed", Option.None, Option.None),
+            nameof(FreeAgentError) => new FreeAgentError(actualDetails, oneDrive, "reconciliation failed", Option.None),
             nameof(FreeAgentInterventionPending) => new FreeAgentInterventionPending(
-                actualDetails, oneDrive, new FreeAgentInterventionId("intervention-1")),
+                actualDetails, oneDrive, bill, new FreeAgentInterventionId("intervention-1")),
             nameof(Expected) => new Expected(Option.None),
             nameof(Retrieved) => new Retrieved(actualDetails),
             nameof(FreeAgentMatchExpected) => new FreeAgentMatchExpected(actualDetails, oneDrive, Option.None),
@@ -295,8 +295,7 @@ public sealed class InvoiceSyncOverviewTests
                 Actuals.Build(),
                 oneDrive,
                 "verification failed",
-                bill,
-                new FreeAgentAttemptedAttachment(
+                new FreeAgentErrorBillContext(
                     bill,
                     new Integrations.FreeAgent.FreeAgentAttachmentMetadata(
                         "invoice.pdf", 1024, "application/pdf", DateTimeOffset.UtcNow))));
@@ -321,7 +320,7 @@ public sealed class InvoiceSyncOverviewTests
         var record = Records.Build(
             config,
             expectedDate: new DateOnly(2025, 7, 1),
-            state: new FreeAgentError(Actuals.Build(), oneDrive, "FreeAgent bill locked", bill, Option.None));
+            state: new FreeAgentError(Actuals.Build(), oneDrive, "FreeAgent bill locked", new FreeAgentErrorBillContext(bill, Option.None)));
         var records = new InMemoryInvoiceRecordRepository(record);
         var overview = new InvoiceSyncOverview(
             new InvoiceConfigurationService(new FakeConfigurationRepository(config)), records);
@@ -341,7 +340,7 @@ public sealed class InvoiceSyncOverviewTests
         var record = Records.Build(
             config,
             expectedDate: new DateOnly(2025, 7, 1),
-            state: new FreeAgentError(Actuals.Build(), oneDrive, "Could not re-download the invoice.", Option.None, Option.None));
+            state: new FreeAgentError(Actuals.Build(), oneDrive, "Could not re-download the invoice.", Option.None));
         var records = new InMemoryInvoiceRecordRepository(record);
         var overview = new InvoiceSyncOverview(
             new InvoiceConfigurationService(new FakeConfigurationRepository(config)), records);
@@ -365,7 +364,7 @@ public sealed class InvoiceSyncOverviewTests
         {
             nameof(RetrievalError) => new RetrievalError("transient failure"),
             nameof(FreeAgentInterventionPending) => new FreeAgentInterventionPending(
-                Actuals.Build(), oneDrive, new FreeAgentInterventionId("intervention-1")),
+                Actuals.Build(), oneDrive, new Integrations.FreeAgent.FreeAgentBillIdentity("https://api.freeagent.com/v2/bills/1"), new FreeAgentInterventionId("intervention-1")),
             _ => throw new ArgumentOutOfRangeException(nameof(stateType), stateType, "Unhandled state type in test."),
         };
         var config = Configurations.Build(id: new InvoiceConfigurationId("acme"));

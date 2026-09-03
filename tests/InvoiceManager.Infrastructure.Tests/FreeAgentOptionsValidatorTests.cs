@@ -5,6 +5,10 @@ namespace InvoiceManager.Infrastructure.Tests;
 
 public sealed class FreeAgentOptionsValidatorTests
 {
+    private const string ExpectedFailureMessage =
+        "FreeAgent:Subdomain must be a valid DNS label: 1-63 characters, letters/digits/hyphens only, " +
+        "and must not start or end with a hyphen.";
+
     [Fact]
     public void Validate_Succeeds_WhenSubdomainIsEmpty()
     {
@@ -21,9 +25,21 @@ public sealed class FreeAgentOptionsValidatorTests
     [InlineData("acmeltd")]
     [InlineData("acme-ltd")]
     [InlineData("ACME123")]
-    public void Validate_Succeeds_ForABareHostnameLabel(string subdomain)
+    [InlineData("a")] // Single character - the shortest valid label.
+    public void Validate_Succeeds_ForAValidDnsLabel(string subdomain)
     {
         var validator = new FreeAgentOptionsValidator();
+
+        var result = validator.Validate(null, new FreeAgentOptions { Subdomain = subdomain });
+
+        Assert.Equal(ValidateOptionsResult.Success, result);
+    }
+
+    [Fact]
+    public void Validate_Succeeds_AtTheMaximumDnsLabelLength()
+    {
+        var validator = new FreeAgentOptionsValidator();
+        var subdomain = new string('a', 63);
 
         var result = validator.Validate(null, new FreeAgentOptions { Subdomain = subdomain });
 
@@ -35,15 +51,28 @@ public sealed class FreeAgentOptionsValidatorTests
     [InlineData("acme/ltd")] // Path separator - could build a link outside the FreeAgent host.
     [InlineData("acme?ltd")] // Query character.
     [InlineData("acme.freeagent.com")] // A full host, not a bare label.
-    public void Validate_Fails_WhenSubdomainContainsCharactersUnsafeForAHostname(string subdomain)
+    [InlineData("-")] // Bare hyphen.
+    [InlineData("-acme")] // Leading hyphen.
+    [InlineData("acme-")] // Trailing hyphen.
+    public void Validate_Fails_WhenSubdomainIsNotAValidDnsLabel(string subdomain)
     {
         var validator = new FreeAgentOptionsValidator();
 
         var result = validator.Validate(null, new FreeAgentOptions { Subdomain = subdomain });
 
         Assert.True(result.Failed);
-        Assert.Contains(
-            "FreeAgent:Subdomain must contain only letters, digits, and hyphens (it becomes part of a hostname).",
-            result.Failures);
+        Assert.Contains(ExpectedFailureMessage, result.Failures);
+    }
+
+    [Fact]
+    public void Validate_Fails_WhenSubdomainExceedsTheMaximumDnsLabelLength()
+    {
+        var validator = new FreeAgentOptionsValidator();
+        var subdomain = new string('a', 64);
+
+        var result = validator.Validate(null, new FreeAgentOptions { Subdomain = subdomain });
+
+        Assert.True(result.Failed);
+        Assert.Contains(ExpectedFailureMessage, result.Failures);
     }
 }

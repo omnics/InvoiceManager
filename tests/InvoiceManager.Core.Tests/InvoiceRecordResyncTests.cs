@@ -162,7 +162,7 @@ public sealed class InvoiceRecordResyncTests
             nameof(NotFound) => new NotFound("no invoice found within tolerance"),
             nameof(Retrieved) => new Retrieved(actualDetails),
             nameof(SavedToOneDrive) => new SavedToOneDrive(actualDetails, OneDrive),
-            nameof(FreeAgentError) => new FreeAgentError(actualDetails, OneDrive, "reconciliation failed", Option.None, Option.None),
+            nameof(FreeAgentError) => new FreeAgentError(actualDetails, OneDrive, "reconciliation failed", Option.None),
             nameof(FreeAgentMatchExpected) => new FreeAgentMatchExpected(actualDetails, OneDrive, Option.None),
             nameof(FreeAgentBillMatched) => new FreeAgentBillMatched(
                 actualDetails, OneDrive, new FreeAgentBillIdentity("https://api.freeagent.com/v2/bills/1")),
@@ -173,7 +173,11 @@ public sealed class InvoiceRecordResyncTests
     }
 
     private static InvoiceWorkflowState BuildInterventionPendingState(FreeAgentInterventionId interventionId) =>
-        new FreeAgentInterventionPending(Actuals.Build(new DateOnly(2025, 7, 5)), OneDrive, interventionId);
+        new FreeAgentInterventionPending(
+            Actuals.Build(new DateOnly(2025, 7, 5)),
+            OneDrive,
+            new FreeAgentBillIdentity("https://api.freeagent.com/v2/bills/1"),
+            interventionId);
 
     private static FreeAgentGuessIntervention BuildIntervention(FreeAgentInterventionId id, InvoiceRecordId recordId) =>
         new(

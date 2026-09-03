@@ -211,12 +211,13 @@ internal sealed class InvoiceRecordDocument
         nameof(FreeAgentAttached) => new FreeAgentAttached(
             RequiredActualDetails(), RequiredOneDriveDetails(), RequiredFreeAgentBillIdentity(), RequiredFreeAgentAttachment()),
         nameof(FreeAgentInterventionPending) => new FreeAgentInterventionPending(
-            RequiredActualDetails(), RequiredOneDriveDetails(), RequiredFreeAgentInterventionId()),
+            RequiredActualDetails(), RequiredOneDriveDetails(), RequiredFreeAgentBillIdentity(), RequiredFreeAgentInterventionId()),
         nameof(FreeAgentError) => new FreeAgentError(
             RequiredActualDetails(), RequiredOneDriveDetails(), LastError ?? string.Empty,
-            FreeAgentBillUrl is { } billUrl ? new FreeAgentBillIdentity(billUrl) : Option.None,
-            FreeAgentBillUrl is { } attemptedBillUrl && FreeAgentAttachment is { } attemptedAttachment
-                ? new FreeAgentAttemptedAttachment(new FreeAgentBillIdentity(attemptedBillUrl), attemptedAttachment.ToMetadata())
+            FreeAgentBillUrl is { } billUrl
+                ? new FreeAgentErrorBillContext(
+                    new FreeAgentBillIdentity(billUrl),
+                    FreeAgentAttachment is { } attachment ? attachment.ToMetadata() : Option.None)
                 : Option.None),
         _ => throw new InvalidOperationException(
             $"Invoice record document '{Id}' has unrecognised status '{Status}'."),
@@ -327,6 +328,7 @@ internal sealed class InvoiceRecordDocument
             Status = nameof(FreeAgentInterventionPending),
             ActualDetails = ActualInvoiceDetailsDocument.FromDetails(pending.ActualDetails),
             OneDriveDetails = OneDriveDetailsDocument.FromDetails(pending.OneDriveDetails),
+            FreeAgentBillUrl = pending.Bill.Url.OriginalString,
             FreeAgentInterventionId = pending.InterventionId.Value,
         },
         FreeAgentError freeAgentError => new()
@@ -335,9 +337,9 @@ internal sealed class InvoiceRecordDocument
             ActualDetails = ActualInvoiceDetailsDocument.FromDetails(freeAgentError.ActualDetails),
             OneDriveDetails = OneDriveDetailsDocument.FromDetails(freeAgentError.OneDriveDetails),
             LastError = freeAgentError.ErrorMessage,
-            FreeAgentBillUrl = freeAgentError.Bill switch { FreeAgentBillIdentity bill => bill.Url.OriginalString, None => null },
-            FreeAgentAttachment = freeAgentError.AttemptedAttachment is FreeAgentAttemptedAttachment attempted
-                ? FreeAgentAttachmentMetadataDocument.FromMetadata(attempted.Attachment)
+            FreeAgentBillUrl = freeAgentError.BillContext switch { FreeAgentErrorBillContext context => context.Bill.Url.OriginalString, None => null },
+            FreeAgentAttachment = freeAgentError.BillContext is FreeAgentErrorBillContext { AttemptedAttachment: FreeAgentAttachmentMetadata metadata }
+                ? FreeAgentAttachmentMetadataDocument.FromMetadata(metadata)
                 : null,
         },
     };
