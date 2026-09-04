@@ -494,6 +494,18 @@ function Invoke-ConfigurationSeeder {
         Pop-Location
     }
 
+    # The backend (resource group/storage account/state key) is selected from -Environment
+    # before terraform init ever runs, so it should already hold this environment's state -
+    # but for the destructive modes, don't just trust that: if the selected state was ever
+    # applied against the wrong tfvars (e.g. production vars written under the test state key),
+    # its own "environment" output is the authoritative record of what it actually contains.
+    # Cross-check it before deleting anything, rather than deleting whatever Cosmos account the
+    # state happens to point at under the assumption it must be the requested one.
+    $stateEnvironment = $outputs.environment.value
+    if (($ClearDatabase -or $ClearRecordsOnly) -and $stateEnvironment -ne $Environment) {
+        throw "Terraform state reports environment '$stateEnvironment' but -Environment '$Environment' was requested. Refusing to run a destructive clear against a possibly mismatched backend."
+    }
+
     $cosmosEndpoint = $outputs.cosmos_endpoint.value
     $cosmosDatabase = $outputs.cosmos_database_name.value
     $seedFile = Join-Path $RepoRoot "data/seed/invoice-configurations.json"
