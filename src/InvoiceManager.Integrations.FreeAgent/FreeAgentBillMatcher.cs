@@ -80,9 +80,17 @@ internal sealed class FreeAgentBillMatcher : IFreeAgentBillMatcher
         var expected = criteria.ExpectedAmount;
         var amountDescription = $"{expected.Amount} {expected.Currency.Code} (tolerance {criteria.AmountTolerance})";
 
+        // ContactDisplayName is a convenience only, never authoritative (see FreeAgentContact),
+        // and configurations saved before it existed - or with it left blank - can still supply
+        // an empty string. Fall back to the contact URL rather than emitting a diagnostic with
+        // no contact identifier at all.
+        var contactDescription = string.IsNullOrWhiteSpace(criteria.ContactDisplayName)
+            ? criteria.ContactUrl.Url.OriginalString
+            : criteria.ContactDisplayName;
+
         if (candidates.Count == 0)
         {
-            return $"No FreeAgent bill for {criteria.ContactDisplayName} is dated between {windowStart:yyyy-MM-dd} " +
+            return $"No FreeAgent bill for {contactDescription} is dated between {windowStart:yyyy-MM-dd} " +
                 $"and {windowEnd:yyyy-MM-dd}. Expected amount: {amountDescription}.";
         }
 
@@ -104,10 +112,10 @@ internal sealed class FreeAgentBillMatcher : IFreeAgentBillMatcher
             .FirstOrDefault();
 
         return nearest is null
-            ? $"{candidates.Count} FreeAgent bill(s) found for {criteria.ContactDisplayName} dated between " +
+            ? $"{candidates.Count} FreeAgent bill(s) found for {contactDescription} dated between " +
                 $"{windowStart:yyyy-MM-dd} and {windowEnd:yyyy-MM-dd}, but none had a parsable total value. " +
                 $"Expected amount: {amountDescription}."
-            : $"{candidates.Count} FreeAgent bill(s) found for {criteria.ContactDisplayName} dated between " +
+            : $"{candidates.Count} FreeAgent bill(s) found for {contactDescription} dated between " +
                 $"{windowStart:yyyy-MM-dd} and {windowEnd:yyyy-MM-dd}, but none matched the expected amount " +
                 $"{amountDescription}; nearest was {nearest.Url} for {nearest.TotalValue} {nearest.Currency}.";
     }

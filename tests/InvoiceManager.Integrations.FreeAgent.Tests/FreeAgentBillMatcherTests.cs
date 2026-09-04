@@ -200,6 +200,32 @@ public sealed class FreeAgentBillMatcherTests
         Assert.Contains("No FreeAgent bill", noMatch.Diagnostic);
     }
 
+    [Fact]
+    public async Task FindBillAsync_DiagnosticFallsBackToContactUrl_WhenDisplayNameIsBlank()
+    {
+        var handler = new StubHttpMessageHandler((request, index) => JsonResponse(EmptyPageJson()));
+        var client = TestClientFactory.Create(handler);
+        var matcher = new FreeAgentBillMatcher(client);
+
+        var criteria = new FreeAgentBillSearchCriteria(
+            new FreeAgentContactIdentity(ContactUrl),
+            "",
+            new DateOnly(2026, 8, 1),
+            3,
+            new Money(11.59m, "GBP"),
+            0.01m);
+
+        var result = await matcher.FindBillAsync(criteria);
+
+        if (result is not NoFreeAgentBillMatch noMatch)
+        {
+            Assert.Fail($"Expected NoFreeAgentBillMatch but got {result}.");
+            return;
+        }
+
+        Assert.Contains(ContactUrl, noMatch.Diagnostic);
+    }
+
     private static string BillsPageJson(params (string Currency, string TotalValue, string Reference)[] bills) =>
         $$"""
         {"bills": [{{string.Join(",", bills.Select(b => $$"""
