@@ -237,6 +237,20 @@ public sealed class AdminAuthorizationPageTests
         Assert.False(await freeAgentStore.HasRefreshTokenAsync());
     }
 
+    [Fact]
+    public async Task AuthorizationPageModel_OnPostResetFreeAgent_AlsoClearsTheCapturedSubdomain()
+    {
+        // Otherwise a subsequent authorization of a different FreeAgent account would keep
+        // pointing "Open FreeAgent bill" links at the previous account's subdomain.
+        var freeAgentStore = new FakeFreeAgentAuthorizationStore(hasRefreshToken: true);
+        await freeAgentStore.SaveSubdomainAsync("previous-account");
+        var model = CreateAuthorizationModel(hasTokenCache: false, isSignedIn: true, freeAgentAuthorizationStore: freeAgentStore);
+
+        await model.OnPostResetFreeAgentAsync();
+
+        Assert.Null(await freeAgentStore.ReadSubdomainAsync());
+    }
+
     private static WebApplicationFactory<Program> CreateConfiguredFactory(
         bool hasTokenCache = false,
         bool hasFreeAgentRefreshToken = false,
@@ -375,6 +389,8 @@ public sealed class AdminAuthorizationPageTests
             this.hasRefreshToken = hasRefreshToken;
         }
 
+        public string? Subdomain { get; private set; }
+
         public Task<bool> HasRefreshTokenAsync(CancellationToken cancellationToken = default)
         {
             return Task.FromResult(hasRefreshToken);
@@ -394,6 +410,23 @@ public sealed class AdminAuthorizationPageTests
         public Task ClearRefreshTokenAsync(CancellationToken cancellationToken = default)
         {
             hasRefreshToken = false;
+            return Task.CompletedTask;
+        }
+
+        public Task<string?> ReadSubdomainAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(Subdomain);
+        }
+
+        public Task SaveSubdomainAsync(string subdomain, CancellationToken cancellationToken = default)
+        {
+            Subdomain = subdomain;
+            return Task.CompletedTask;
+        }
+
+        public Task ClearSubdomainAsync(CancellationToken cancellationToken = default)
+        {
+            Subdomain = null;
             return Task.CompletedTask;
         }
     }

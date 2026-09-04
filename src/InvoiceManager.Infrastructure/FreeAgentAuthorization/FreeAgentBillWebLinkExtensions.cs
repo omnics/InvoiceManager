@@ -10,16 +10,17 @@ public static class FreeAgentBillWebLinkExtensions
     {
         /// <summary>
         /// The bill's URL in FreeAgent's own browsable web app, or <see cref="None"/> if
-        /// <see cref="FreeAgentOptions.Subdomain"/> isn't configured - never a guess at a
-        /// link that might not resolve.
+        /// <paramref name="subdomain"/> isn't known (FreeAgent has never been authorized, or was
+        /// authorized before its subdomain was captured) - never a guess at a link that might
+        /// not resolve.
         /// </summary>
-        public Option<Uri> WebUrl(FreeAgentOptions options)
+        public Option<Uri> WebUrl(FreeAgentEnvironment environment, string? subdomain)
         {
-            if (string.IsNullOrWhiteSpace(options.Subdomain))
+            if (string.IsNullOrWhiteSpace(subdomain))
                 return Option.None;
 
             var id = bill.Url.Segments[^1].TrimEnd('/');
-            return new Uri(FreeAgentHosts.AppBaseUri(options.Environment, options.Subdomain), $"bills/{id}");
+            return new Uri(FreeAgentHosts.AppBaseUri(environment, subdomain), $"bills/{id}");
         }
     }
 }

@@ -25,6 +25,14 @@ public sealed class FreeAgentTokenProviderTests
         }
 
         public Task ClearRefreshTokenAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<string?> ReadSubdomainAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<string?>(null);
+
+        public Task SaveSubdomainAsync(string subdomain, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task ClearSubdomainAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     [Fact]

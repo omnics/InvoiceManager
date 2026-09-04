@@ -12,9 +12,7 @@ public sealed class FreeAgentBillWebLinkExtensionsTests
     [Fact]
     public void WebUrl_BuildsTheBrowsableLink_FromTheAccountSubdomainAndTheBillsId()
     {
-        var options = new FreeAgentOptions { Environment = FreeAgentEnvironment.Sandbox, Subdomain = "omnicssandbox" };
-
-        var url = Bill.WebUrl(options);
+        var url = Bill.WebUrl(FreeAgentEnvironment.Sandbox, "omnicssandbox");
 
         Assert.True(url is Uri found && found.ToString() == "https://omnicssandbox.sandbox.freeagent.com/bills/327959");
     }
@@ -23,10 +21,8 @@ public sealed class FreeAgentBillWebLinkExtensionsTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void WebUrl_ReturnsNone_WhenNoSubdomainIsConfigured_RatherThanGuessingALink(string? subdomain)
+    public void WebUrl_ReturnsNone_WhenNoSubdomainIsKnown_RatherThanGuessingALink(string? subdomain)
     {
-        var options = new FreeAgentOptions { Environment = FreeAgentEnvironment.Sandbox, Subdomain = subdomain! };
-
-        Assert.True(Bill.WebUrl(options) is None);
+        Assert.True(Bill.WebUrl(FreeAgentEnvironment.Sandbox, subdomain) is None);
     }
 }

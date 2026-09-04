@@ -25,8 +25,14 @@ public class IndexModel(
     IMicrosoftAuthorizationStore authorizationStore,
     IInvoiceRecordResyncTrigger resyncTrigger,
     TimeProvider timeProvider,
-    IOptions<FreeAgentOptions> freeAgentOptions) : PageModel
+    IOptions<FreeAgentOptions> freeAgentOptions,
+    IFreeAgentAuthorizationStore freeAgentAuthorizationStore) : PageModel
 {
+    // Loaded once per request in LoadAsync, mirroring HasWorkflowAuthorization - keeps
+    // FreeAgentBillUrl/HasAnyAction synchronous for Razor's per-row calls even though the
+    // underlying store lookup is async.
+    private string? freeAgentSubdomain;
+
     public IReadOnlyList<InvoiceSyncRow> Rows { get; private set; } = [];
     public bool HasWorkflowAuthorization { get; private set; }
     public string? StatusMessage { get; private set; }
@@ -110,11 +116,11 @@ public class IndexModel(
     }
 
     /// <summary>
-    /// The bill's link in FreeAgent's own web app, or null if <c>FreeAgent:Subdomain</c> isn't
-    /// configured for this deployment - see <see cref="FreeAgentBillWebLinkExtensions.WebUrl"/>.
+    /// The bill's link in FreeAgent's own web app, or null if the authorized account's subdomain
+    /// hasn't been captured yet - see <see cref="FreeAgentBillWebLinkExtensions.WebUrl"/>.
     /// </summary>
     public string? FreeAgentBillUrl(FreeAgentBillIdentity bill) =>
-        bill.WebUrl(freeAgentOptions.Value) is Uri url ? url.ToString() : null;
+        bill.WebUrl(freeAgentOptions.Value.Environment, freeAgentSubdomain) is Uri url ? url.ToString() : null;
 
     /// <summary>
     /// Whether <paramref name="location"/> is safe to render as an "Open file"/"Open folder"
@@ -196,5 +202,6 @@ public class IndexModel(
                 : rows.OrderBy(r => r.Date).ToList(),
         };
         HasWorkflowAuthorization = await authorizationStore.HasTokenCacheAsync(HttpContext.RequestAborted);
+        freeAgentSubdomain = await freeAgentAuthorizationStore.ReadSubdomainAsync(HttpContext.RequestAborted);
     }
 }

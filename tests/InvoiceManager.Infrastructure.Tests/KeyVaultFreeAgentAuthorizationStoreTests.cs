@@ -65,13 +65,63 @@ public sealed class KeyVaultFreeAgentAuthorizationStoreTests
         Assert.False(secretStore.Secrets.ContainsKey("custom-freeagent-refresh-token"));
     }
 
+    [Fact]
+    public async Task SaveSubdomainAsync_StoresPlainValueUnderConfiguredSecretName()
+    {
+        var secretStore = new FakeSecretStoreClient();
+        var store = CreateStore(secretStore);
+
+        await store.SaveSubdomainAsync("acmeltd");
+
+        Assert.Equal("acmeltd", secretStore.Secrets["custom-freeagent-subdomain"]);
+    }
+
+    [Fact]
+    public async Task SaveSubdomainAsync_Throws_WhenValueIsBlank()
+    {
+        var store = CreateStore(new FakeSecretStoreClient());
+
+        await Assert.ThrowsAsync<ArgumentException>(() => store.SaveSubdomainAsync("   "));
+    }
+
+    [Fact]
+    public async Task ReadSubdomainAsync_ReturnsStoredValue()
+    {
+        var secretStore = new FakeSecretStoreClient();
+        secretStore.Secrets["custom-freeagent-subdomain"] = "acmeltd";
+        var store = CreateStore(secretStore);
+
+        Assert.Equal("acmeltd", await store.ReadSubdomainAsync());
+    }
+
+    [Fact]
+    public async Task ReadSubdomainAsync_ReturnsNull_WhenSecretIsMissing()
+    {
+        var store = CreateStore(new FakeSecretStoreClient());
+
+        Assert.Null(await store.ReadSubdomainAsync());
+    }
+
+    [Fact]
+    public async Task ClearSubdomainAsync_DeletesSecret()
+    {
+        var secretStore = new FakeSecretStoreClient();
+        secretStore.Secrets["custom-freeagent-subdomain"] = "acmeltd";
+        var store = CreateStore(secretStore);
+
+        await store.ClearSubdomainAsync();
+
+        Assert.False(secretStore.Secrets.ContainsKey("custom-freeagent-subdomain"));
+    }
+
     private static KeyVaultFreeAgentAuthorizationStore CreateStore(FakeSecretStoreClient secretStore)
     {
         return new KeyVaultFreeAgentAuthorizationStore(
             secretStore,
             Options.Create(new FreeAgentAuthorizationOptions
             {
-                RefreshTokenSecretName = "custom-freeagent-refresh-token"
+                RefreshTokenSecretName = "custom-freeagent-refresh-token",
+                SubdomainSecretName = "custom-freeagent-subdomain",
             }));
     }
 

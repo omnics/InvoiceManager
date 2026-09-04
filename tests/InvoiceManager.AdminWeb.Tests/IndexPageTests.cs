@@ -362,7 +362,8 @@ public sealed class IndexPageTests
             new FakeMicrosoftAuthorizationStore(hasWorkflowAuthorization),
             resyncTrigger ?? new FakeInvoiceRecordResyncTrigger(),
             timeProvider ?? new FixedTimeProvider(new DateTimeOffset(2026, 9, 3, 14, 32, 31, TimeSpan.Zero)),
-            Options.Create(new FreeAgentOptions { Environment = FreeAgentEnvironment.Sandbox, Subdomain = freeAgentSubdomain }));
+            Options.Create(new FreeAgentOptions { Environment = FreeAgentEnvironment.Sandbox }),
+            new FakeFreeAgentAuthorizationStore(freeAgentSubdomain));
 
         var httpContext = new DefaultHttpContext
         {
@@ -373,6 +374,30 @@ public sealed class IndexPageTests
         model.TempData = new TempDataDictionary(httpContext, new FakeTempDataProvider());
 
         return model;
+    }
+
+    private sealed class FakeFreeAgentAuthorizationStore(string? subdomain) : IFreeAgentAuthorizationStore
+    {
+        public Task<bool> HasRefreshTokenAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(false);
+
+        public Task<string?> ReadRefreshTokenAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<string?>(null);
+
+        public Task SaveRefreshTokenAsync(string refreshToken, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task ClearRefreshTokenAsync(CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task<string?> ReadSubdomainAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(subdomain);
+
+        public Task SaveSubdomainAsync(string subdomain, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task ClearSubdomainAsync(CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 
     private sealed class FakeExpectedRecordGenerationTrigger : IExpectedRecordGenerationTrigger

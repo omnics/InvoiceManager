@@ -13,6 +13,7 @@ public sealed class KeyVaultFreeAgentAuthorizationStore : IFreeAgentAuthorizatio
 {
     private readonly ISecretStoreClient secretStoreClient;
     private readonly string secretName;
+    private readonly string subdomainSecretName;
 
     public KeyVaultFreeAgentAuthorizationStore(
         ISecretStoreClient secretStoreClient,
@@ -20,6 +21,7 @@ public sealed class KeyVaultFreeAgentAuthorizationStore : IFreeAgentAuthorizatio
     {
         this.secretStoreClient = secretStoreClient;
         secretName = options.Value.RefreshTokenSecretName;
+        subdomainSecretName = options.Value.SubdomainSecretName;
     }
 
     public async Task<bool> HasRefreshTokenAsync(CancellationToken cancellationToken = default)
@@ -46,5 +48,25 @@ public sealed class KeyVaultFreeAgentAuthorizationStore : IFreeAgentAuthorizatio
     public Task ClearRefreshTokenAsync(CancellationToken cancellationToken = default)
     {
         return secretStoreClient.DeleteSecretAsync(secretName, cancellationToken);
+    }
+
+    public Task<string?> ReadSubdomainAsync(CancellationToken cancellationToken = default)
+    {
+        return secretStoreClient.GetSecretAsync(subdomainSecretName, cancellationToken);
+    }
+
+    public Task SaveSubdomainAsync(string subdomain, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(subdomain))
+        {
+            throw new ArgumentException("Subdomain cannot be empty.", nameof(subdomain));
+        }
+
+        return secretStoreClient.SetSecretAsync(subdomainSecretName, subdomain, cancellationToken);
+    }
+
+    public Task ClearSubdomainAsync(CancellationToken cancellationToken = default)
+    {
+        return secretStoreClient.DeleteSecretAsync(subdomainSecretName, cancellationToken);
     }
 }

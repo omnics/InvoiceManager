@@ -43,6 +43,8 @@ public static class FreeAgentIntegrationRegistration
                 sp.GetRequiredService<IOptions<FreeAgentOptions>>(),
                 sp.GetRequiredService<IOptions<FreeAgentAuthorizationOptions>>());
         });
+        services.AddHttpClient<IFreeAgentCompanyLookup, FreeAgentCompanyLookup>(
+            client => client.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent));
 
         services.AddTransient<IFreeAgentBillMatcher, FreeAgentBillMatcher>();
         services.AddTransient<IFreeAgentBillReconciler, FreeAgentBillReconciler>();
