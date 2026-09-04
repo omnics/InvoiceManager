@@ -519,7 +519,10 @@ function Invoke-ConfigurationSeeder {
     # Use the same configuration keys the seeder (via CosmosClientFactory) reads.
     # CosmosEndpoint + DefaultAzureCredential authenticates against the real account;
     # the schema already exists (Terraform owns it) so --ensure-schema is deliberately
-    # not passed here.
+    # not passed here. Saved/restored below rather than just removed, so a caller who already
+    # had these set (e.g. via the manual workflow this switch replaces) doesn't lose them.
+    $savedCosmosEndpoint = $env:CosmosEndpoint
+    $savedCosmosDatabase = $env:CosmosDatabase
     $env:CosmosEndpoint = $cosmosEndpoint
     $env:CosmosDatabase = $cosmosDatabase
 
@@ -566,8 +569,8 @@ function Invoke-ConfigurationSeeder {
         }
     }
     finally {
-        Remove-Item Env:\CosmosEndpoint -ErrorAction SilentlyContinue
-        Remove-Item Env:\CosmosDatabase -ErrorAction SilentlyContinue
+        if ($null -ne $savedCosmosEndpoint) { $env:CosmosEndpoint = $savedCosmosEndpoint } else { Remove-Item Env:\CosmosEndpoint -ErrorAction SilentlyContinue }
+        if ($null -ne $savedCosmosDatabase) { $env:CosmosDatabase = $savedCosmosDatabase } else { Remove-Item Env:\CosmosDatabase -ErrorAction SilentlyContinue }
         if ($null -ne $savedArmKey) { $env:ARM_ACCESS_KEY = $savedArmKey }
     }
 }
