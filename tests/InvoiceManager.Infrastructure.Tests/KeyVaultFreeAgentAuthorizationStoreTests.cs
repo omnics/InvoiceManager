@@ -114,15 +114,22 @@ public sealed class KeyVaultFreeAgentAuthorizationStoreTests
             : throw new InvalidOperationException($"'{value}' is not a valid test subdomain.");
 
     [Fact]
-    public async Task ClearSubdomainAsync_DeletesSecret()
+    public async Task ClearSubdomainAsync_OverwritesWithAnEmptyValue_RatherThanDeletingTheSecret()
     {
+        // Deliberately not a delete: FreeAgentAuthorizationCapture clears this secret
+        // immediately before setting it to a new value, and a real Key Vault delete would leave
+        // it soft-deleted, forcing the following set to recover (and thus risk restoring) the
+        // old value if that set's own retry then failed. An empty value still parses to
+        // Option.None via FreeAgentSubdomain.TryParse (see ReadSubdomainAsync_ReturnsNone_WhenTheStoredSecretIsNotAValidSubdomain),
+        // without ever soft-deleting the secret.
         var secretStore = new FakeSecretStoreClient();
         secretStore.Secrets["custom-freeagent-subdomain"] = "acmeltd";
         var store = CreateStore(secretStore);
 
         await store.ClearSubdomainAsync();
 
-        Assert.False(secretStore.Secrets.ContainsKey("custom-freeagent-subdomain"));
+        Assert.Equal("", secretStore.Secrets["custom-freeagent-subdomain"]);
+        Assert.True(await store.ReadSubdomainAsync() is None);
     }
 
     private static KeyVaultFreeAgentAuthorizationStore CreateStore(FakeSecretStoreClient secretStore)

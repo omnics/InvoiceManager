@@ -65,6 +65,14 @@ public sealed class KeyVaultFreeAgentAuthorizationStore : IFreeAgentAuthorizatio
 
     public Task ClearSubdomainAsync(CancellationToken cancellationToken = default)
     {
-        return secretStoreClient.DeleteSecretAsync(subdomainSecretName, cancellationToken);
+        // Overwrites with an empty value rather than deleting: FreeAgentAuthorizationCapture
+        // clears this secret immediately before setting it to a new value, and a real Key
+        // Vault delete leaves the secret soft-deleted - AzureKeyVaultSecretStoreClient.SetSecretAsync
+        // then has to recover it (restoring its *old* value) before it can retry the set, so if
+        // that retry itself failed, the secret would be left holding the recovered old value -
+        // exactly the stale, wrong-account subdomain this whole capture exists to prevent. An
+        // empty value parses to Option.None via FreeAgentSubdomain.TryParse just like a missing
+        // secret does, without ever soft-deleting it.
+        return secretStoreClient.SetSecretAsync(subdomainSecretName, string.Empty, cancellationToken);
     }
 }

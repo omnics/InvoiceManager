@@ -150,11 +150,11 @@ public class AuthorizationModel : PageModel
 
     public async Task<IActionResult> OnPostResetFreeAgentAsync()
     {
-        await freeAgentAuthorizationStore.ClearRefreshTokenAsync(HttpContext.RequestAborted);
-        // Also clears the captured subdomain - otherwise it would linger from whatever account
-        // was previously authorized and could point "Open FreeAgent bill" links at the wrong
-        // account once a different one is authorized.
-        await freeAgentAuthorizationStore.ClearSubdomainAsync(HttpContext.RequestAborted);
+        // Clears the subdomain before the refresh token (see FreeAgentAuthorizationCapture) -
+        // otherwise a failure between the two clears could leave the subdomain outliving the
+        // token that was supposed to own it, still usable for "Open FreeAgent bill" links even
+        // though this page would report FreeAgent as no longer authorized.
+        await FreeAgentAuthorizationCapture.ClearAsync(freeAgentAuthorizationStore, HttpContext.RequestAborted);
         TempData["FreeAgentStatusMessage"] = "FreeAgent authorization was reset.";
         return RedirectToPage();
     }

@@ -77,6 +77,91 @@ public sealed class FreeAgentAuthorizationCaptureTests
         Assert.True(await store.ReadSubdomainAsync() is None);
     }
 
+    [Fact]
+    public async Task ClearAsync_ClearsBothValues_WhenEverythingSucceeds()
+    {
+        var store = new FakeStore { RefreshToken = "old-refresh-token", Subdomain = RequireSubdomain("oldaccount") };
+
+        await FreeAgentAuthorizationCapture.ClearAsync(store);
+
+        Assert.Null(store.RefreshToken);
+        Assert.True(await store.ReadSubdomainAsync() is None);
+    }
+
+    [Fact]
+    public async Task ClearAsync_LeavesTheSubdomainAlreadyGone_WhenClearingTheRefreshTokenThenFails()
+    {
+        // Clears in the same subdomain-first order as SaveAsync: if the second clear fails, the
+        // record degrades to "token present, subdomain missing" - the same safe state
+        // AuthorizationModel.IsFreeAgentSubdomainMissing detects and warns about - rather than a
+        // reset that reports "Not captured" while a stale subdomain still builds bill links.
+        var store = new FakeStore
+        {
+            RefreshToken = "old-refresh-token",
+            Subdomain = RequireSubdomain("oldaccount"),
+            FailClearRefreshToken = true,
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => FreeAgentAuthorizationCapture.ClearAsync(store));
+
+        Assert.Equal("old-refresh-token", store.RefreshToken);
+        Assert.True(await store.ReadSubdomainAsync() is None);
+    }
+
+    [Fact]
+    public async Task SaveAsync_SerialisesConcurrentCalls_SoTwoCallbacksNeverInterleaveTheirWrites()
+    {
+        // Two authorization callbacks (two browser tabs, or two administrators) completing at
+        // the same moment on the same AdminWeb instance must never interleave their individual
+        // store calls into a cross-account pair, even though every individual call succeeds.
+        var store = new FakeStore();
+        var log = new List<string>();
+        store.OnStep = step => log.Add(step);
+
+        var callAEnteredClear = new TaskCompletionSource();
+        var releaseCallA = new TaskCompletionSource();
+        var firstClearSeen = false;
+        store.BeforeClearSubdomain = async () =>
+        {
+            if (!firstClearSeen)
+            {
+                firstClearSeen = true;
+                callAEnteredClear.SetResult();
+                await releaseCallA.Task;
+            }
+        };
+
+        // Deliberately not awaited yet: this call must reach (and block inside) its
+        // ClearSubdomainAsync call, holding the gate, before call B is started below.
+        var callA = FreeAgentAuthorizationCapture.SaveAsync(
+            store, "token-a", new FreeAgentCompany(RequireSubdomain("accounta")));
+        await callAEnteredClear.Task;
+
+        var callB = FreeAgentAuthorizationCapture.SaveAsync(
+            store, "token-b", new FreeAgentCompany(RequireSubdomain("accountb")));
+        // Give call B every opportunity to (incorrectly) start while A is still gated - only A's
+        // first step (already logged before it blocked) should be present.
+        await Task.Delay(50);
+        Assert.Equal(["clear-subdomain"], log);
+
+        releaseCallA.SetResult();
+        await Task.WhenAll(callA, callB);
+
+        // Deterministic: A is guaranteed to acquire the gate first (B can only start once A is
+        // already blocked inside its own gated section), so A's three steps must fully complete
+        // before B's begin - never interleaved.
+        Assert.Equal(
+            [
+                "clear-subdomain",
+                "save-refresh-token:token-a",
+                "save-subdomain:accounta",
+                "clear-subdomain",
+                "save-refresh-token:token-b",
+                "save-subdomain:accountb",
+            ],
+            log);
+    }
+
     private static FreeAgentSubdomain RequireSubdomain(string value) =>
         FreeAgentSubdomain.TryParse(value) is FreeAgentSubdomain subdomain
             ? subdomain
@@ -90,9 +175,15 @@ public sealed class FreeAgentAuthorizationCaptureTests
 
         public bool FailClearSubdomain { get; set; }
 
+        public bool FailClearRefreshToken { get; set; }
+
         public bool FailSaveRefreshToken { get; set; }
 
         public bool FailSaveSubdomain { get; set; }
+
+        public Action<string>? OnStep { get; set; }
+
+        public Func<Task>? BeforeClearSubdomain { get; set; }
 
         public Task<bool> HasRefreshTokenAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(RefreshToken is not null);
@@ -102,6 +193,7 @@ public sealed class FreeAgentAuthorizationCaptureTests
 
         public Task SaveRefreshTokenAsync(string refreshToken, CancellationToken cancellationToken = default)
         {
+            OnStep?.Invoke($"save-refresh-token:{refreshToken}");
             if (FailSaveRefreshToken)
                 throw new InvalidOperationException("Simulated Key Vault failure saving the refresh token.");
 
@@ -111,6 +203,10 @@ public sealed class FreeAgentAuthorizationCaptureTests
 
         public Task ClearRefreshTokenAsync(CancellationToken cancellationToken = default)
         {
+            OnStep?.Invoke("clear-refresh-token");
+            if (FailClearRefreshToken)
+                throw new InvalidOperationException("Simulated Key Vault failure clearing the refresh token.");
+
             RefreshToken = null;
             return Task.CompletedTask;
         }
@@ -123,6 +219,7 @@ public sealed class FreeAgentAuthorizationCaptureTests
 
         public Task SaveSubdomainAsync(FreeAgentSubdomain subdomain, CancellationToken cancellationToken = default)
         {
+            OnStep?.Invoke($"save-subdomain:{subdomain.Value}");
             if (FailSaveSubdomain)
                 throw new InvalidOperationException("Simulated Key Vault failure saving the subdomain.");
 
@@ -130,13 +227,15 @@ public sealed class FreeAgentAuthorizationCaptureTests
             return Task.CompletedTask;
         }
 
-        public Task ClearSubdomainAsync(CancellationToken cancellationToken = default)
+        public async Task ClearSubdomainAsync(CancellationToken cancellationToken = default)
         {
+            OnStep?.Invoke("clear-subdomain");
+            if (BeforeClearSubdomain is { } beforeClear)
+                await beforeClear();
             if (FailClearSubdomain)
                 throw new InvalidOperationException("Simulated Key Vault failure clearing the subdomain.");
 
             Subdomain = null;
-            return Task.CompletedTask;
         }
     }
 }
