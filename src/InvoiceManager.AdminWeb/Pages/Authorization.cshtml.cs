@@ -1,4 +1,5 @@
 using InvoiceManager.AdminWeb.Services;
+using InvoiceManager.Core;
 using InvoiceManager.Infrastructure;
 using InvoiceManager.Infrastructure.FreeAgentAuthorization;
 using InvoiceManager.Infrastructure.MicrosoftAuthorization;
@@ -58,6 +59,13 @@ public class AuthorizationModel : PageModel
     public IReadOnlyList<string> ConfigurationMessages { get; private set; } = [];
 
     public bool IsFreeAgentAuthorizationCaptured { get; private set; }
+
+    /// <summary>
+    /// A refresh token is stored, but no subdomain - either authorization was captured before
+    /// this capture existed, or a prior attempt to save the subdomain failed. The bill link on
+    /// the home dashboard stays disabled either way until this is resolved by re-authorizing.
+    /// </summary>
+    public bool IsFreeAgentSubdomainMissing { get; private set; }
 
     public bool CanAuthorizeFreeAgent { get; private set; }
 
@@ -169,6 +177,8 @@ public class AuthorizationModel : PageModel
         }
 
         IsFreeAgentAuthorizationCaptured = await freeAgentAuthorizationStore.HasRefreshTokenAsync(HttpContext.RequestAborted);
+        IsFreeAgentSubdomainMissing = IsFreeAgentAuthorizationCaptured
+            && await freeAgentAuthorizationStore.ReadSubdomainAsync(HttpContext.RequestAborted) is None;
 
         FreeAgentConfigurationMessages = GetFreeAgentConfigurationMessages();
         CanAuthorizeFreeAgent = FreeAgentConfigurationMessages.Count == 0;
