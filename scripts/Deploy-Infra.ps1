@@ -16,6 +16,15 @@ param(
 
     [switch] $ClearDatabase,
 
+    # Skips straight to clearing invoice-records/freeagent-interventions (data-plane deletes,
+    # invoice-configurations untouched) against an already-provisioned environment, then exits -
+    # no GitHub auth, terraform plan/apply, FreeAgent credential check, or AdminWeb local config.
+    # Only reconfigures the Terraform backend (so the right environment's Cosmos account is
+    # resolved) before invoking the seeder. Mutually exclusive with -ClearDatabase and -PlanOnly.
+    # For winding a Test environment's run history back to empty between manual test cycles - see
+    # docs/deployment.md's "Resetting a Test environment's run history" section.
+    [switch] $ClearRecordsOnly,
+
     # GitHub-less apply: pass -var=manage_github=false and skip every gh interaction (tool
     # check, auth/token, owner/repo/reviewer derivation, and stale-variable deletion). For
     # operators who can provision Azure but cannot administer GitHub. The Terraform-owned CI
@@ -44,6 +53,14 @@ param(
 
 if ($PublishAdminWebImage -and $AdminWebImage) {
     throw "-PublishAdminWebImage and -AdminWebImage are mutually exclusive."
+}
+
+if ($ClearDatabase -and $ClearRecordsOnly) {
+    throw "-ClearDatabase and -ClearRecordsOnly are mutually exclusive."
+}
+
+if ($PlanOnly -and $ClearRecordsOnly) {
+    throw "-PlanOnly and -ClearRecordsOnly are mutually exclusive."
 }
 
 Set-StrictMode -Version Latest
@@ -463,10 +480,11 @@ function Invoke-ConfigurationSeeder {
         [string] $TerraformRoot,
         [string] $RepoRoot,
         [string] $Environment,
-        [switch] $ClearDatabase
+        [switch] $ClearDatabase,
+        [switch] $ClearRecordsOnly
     )
 
-    Write-Section "Seeding invoice configurations"
+    Write-Section $(if ($ClearRecordsOnly) { "Clearing invoice records" } else { "Seeding invoice configurations" })
 
     Push-Location $TerraformRoot
     try {
@@ -474,6 +492,18 @@ function Invoke-ConfigurationSeeder {
     }
     finally {
         Pop-Location
+    }
+
+    # The backend (resource group/storage account/state key) is selected from -Environment
+    # before terraform init ever runs, so it should already hold this environment's state -
+    # but for the destructive modes, don't just trust that: if the selected state was ever
+    # applied against the wrong tfvars (e.g. production vars written under the test state key),
+    # its own "environment" output is the authoritative record of what it actually contains.
+    # Cross-check it before deleting anything, rather than deleting whatever Cosmos account the
+    # state happens to point at under the assumption it must be the requested one.
+    $stateEnvironment = $outputs.environment.value
+    if (($ClearDatabase -or $ClearRecordsOnly) -and $stateEnvironment -ne $Environment) {
+        throw "Terraform state reports environment '$stateEnvironment' but -Environment '$Environment' was requested. Refusing to run a destructive clear against a possibly mismatched backend."
     }
 
     $cosmosEndpoint = $outputs.cosmos_endpoint.value
@@ -489,16 +519,28 @@ function Invoke-ConfigurationSeeder {
     # Use the same configuration keys the seeder (via CosmosClientFactory) reads.
     # CosmosEndpoint + DefaultAzureCredential authenticates against the real account;
     # the schema already exists (Terraform owns it) so --ensure-schema is deliberately
-    # not passed here.
+    # not passed here. Saved/restored below rather than just removed, so a caller who already
+    # had these set (e.g. via the manual workflow this switch replaces) doesn't lose them.
+    $savedCosmosEndpoint = $env:CosmosEndpoint
+    $savedCosmosDatabase = $env:CosmosDatabase
     $env:CosmosEndpoint = $cosmosEndpoint
     $env:CosmosDatabase = $cosmosDatabase
 
     # Forward the environment so the seeder nests test downloads under a "Test" folder, and
-    # optionally clear the containers first for a clean re-seed.
-    $seederArgs = @($seedFile, "--environment", $Environment)
-    if ($ClearDatabase) {
-        $seederArgs += "--clear-database"
-        Write-Host "Clearing database contents before seeding (--clear-database)."
+    # optionally clear the containers first for a clean re-seed - or, for -ClearRecordsOnly,
+    # clear invoice-records/freeagent-interventions and exit without touching the seed file or
+    # invoice-configurations at all.
+    $seederArgs = @("--environment", $Environment)
+    if ($ClearRecordsOnly) {
+        $seederArgs += "--clear-records-only"
+        Write-Host "Clearing invoice-records and freeagent-interventions only (--clear-records-only); invoice-configurations untouched."
+    }
+    else {
+        $seederArgs = @($seedFile) + $seederArgs
+        if ($ClearDatabase) {
+            $seederArgs += "--clear-database"
+            Write-Host "Clearing database contents before seeding (--clear-database)."
+        }
     }
 
     try {
@@ -527,8 +569,8 @@ function Invoke-ConfigurationSeeder {
         }
     }
     finally {
-        Remove-Item Env:\CosmosEndpoint -ErrorAction SilentlyContinue
-        Remove-Item Env:\CosmosDatabase -ErrorAction SilentlyContinue
+        if ($null -ne $savedCosmosEndpoint) { $env:CosmosEndpoint = $savedCosmosEndpoint } else { Remove-Item Env:\CosmosEndpoint -ErrorAction SilentlyContinue }
+        if ($null -ne $savedCosmosDatabase) { $env:CosmosDatabase = $savedCosmosDatabase } else { Remove-Item Env:\CosmosDatabase -ErrorAction SilentlyContinue }
         if ($null -ne $savedArmKey) { $env:ARM_ACCESS_KEY = $savedArmKey }
     }
 }
@@ -625,6 +667,20 @@ function Remove-StaleDeployTargetVariables {
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $terraformRoot = Join-Path $repoRoot "infra/terraform"
 
+# Saved so the script's own GITHUB_TOKEN and ARM_ACCESS_KEY (the latter set below to the
+# Terraform backend storage key) can be removed on exit without clobbering values the caller's
+# shell already had set. Invoke-ConfigurationSeeder's own save/restore of ARM_ACCESS_KEY only
+# covers the backend key this script just assigned, not whatever the caller had before that.
+$savedGithubToken = $env:GITHUB_TOKEN
+$savedCallerArmKey = $env:ARM_ACCESS_KEY
+
+# Everything below is wrapped in this try/finally (not just the Terraform-running block further
+# down) so the caller's GITHUB_TOKEN/ARM_ACCESS_KEY are restored even when this script exits
+# early - e.g. a failed gh/az check, or -ClearRecordsOnly's own backend-existence guards, all of
+# which can run (and throw, or `exit`) before Terraform is ever touched. PowerShell still runs
+# `finally` for an `exit` reached inside `try`.
+try {
+
 Write-Section "Checking tools"
 
 if (-not (Test-Command "terraform")) {
@@ -637,7 +693,7 @@ if (-not (Test-Command "az")) {
     exit 1
 }
 
-if (-not $SkipGitHubManagement -and -not (Test-Command "gh")) {
+if (-not $SkipGitHubManagement -and -not $ClearRecordsOnly -and -not (Test-Command "gh")) {
     Show-GitHubCliInstallHelp
     exit 1
 }
@@ -653,24 +709,36 @@ $tenantId = $account.tenantId
 Write-Host "Subscription: $($account.name) ($activeSubscriptionId)"
 Write-Host "Tenant: $tenantId"
 
-Write-Section "Deriving operator identity"
+$functionInvokerUserObjectId = ""
 
-# The signed-in user is granted the Functions "Invoke" app role so they can call the
-# endpoint directly. Derived from the authenticated context, not hardcoded (see
-# [[feedback-no-hardcoded-account-identity]]). A service-principal login (e.g. CI) has no
-# signed-in user, so this stays empty and Terraform manages no operator assignment.
-$functionInvokerUserObjectId = az ad signed-in-user show --query id --output tsv 2>$null
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($functionInvokerUserObjectId)) {
-    $functionInvokerUserObjectId = ""
-    $global:LASTEXITCODE = 0
-    Write-Host "No signed-in user (service-principal login?); no operator Invoke assignment will be managed."
+if ($ClearRecordsOnly) {
+    Write-Section "Skipping operator identity derivation (-ClearRecordsOnly)"
+    Write-Host "No terraform plan/apply will run, so no operator Invoke assignment is needed here."
 }
 else {
-    $functionInvokerUserObjectId = $functionInvokerUserObjectId.Trim()
-    Write-Host "Operator object id: $functionInvokerUserObjectId"
+    Write-Section "Deriving operator identity"
+
+    # The signed-in user is granted the Functions "Invoke" app role so they can call the
+    # endpoint directly. Derived from the authenticated context, not hardcoded (see
+    # [[feedback-no-hardcoded-account-identity]]). A service-principal login (e.g. CI) has no
+    # signed-in user, so this stays empty and Terraform manages no operator assignment.
+    $functionInvokerUserObjectId = az ad signed-in-user show --query id --output tsv 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($functionInvokerUserObjectId)) {
+        $functionInvokerUserObjectId = ""
+        $global:LASTEXITCODE = 0
+        Write-Host "No signed-in user (service-principal login?); no operator Invoke assignment will be managed."
+    }
+    else {
+        $functionInvokerUserObjectId = $functionInvokerUserObjectId.Trim()
+        Write-Host "Operator object id: $functionInvokerUserObjectId"
+    }
 }
 
-if ($SkipGitHubManagement) {
+if ($ClearRecordsOnly) {
+    Write-Section "Skipping GitHub management (-ClearRecordsOnly)"
+    Write-Host "No terraform plan/apply will run, so no gh interaction occurs."
+}
+elseif ($SkipGitHubManagement) {
     Write-Section "Skipping GitHub management (-SkipGitHubManagement)"
     Write-Host "Terraform will run with manage_github=false: the CI identity, deploy environment,"
     Write-Host "secrets, and variables are NOT managed, and no gh interaction occurs."
@@ -729,10 +797,55 @@ Write-Host "Storage account: $stateStorageAccount"
 Write-Host "Container: $stateContainer"
 Write-Host "State key: $stateKey"
 
-Ensure-ResourceGroup -Name $stateResourceGroup -Location $Location
-Ensure-StorageAccount -Name $stateStorageAccount -ResourceGroup $stateResourceGroup -Location $Location
+if ($ClearRecordsOnly) {
+    # -ClearRecordsOnly is documented as operating on an already-provisioned environment (see
+    # docs/deployment.md), unlike every other mode here, which idempotently creates the backend
+    # if missing. Never silently stand up a fresh, empty backend for a mistyped -Environment,
+    # -ApplicationName, or wrong subscription - fail fast instead.
+    $backendExists = $false
+    try {
+        $null = Invoke-JsonCommand -Command @("az", "storage", "account", "show", "--name", $stateStorageAccount, "--resource-group", $stateResourceGroup, "--output", "json")
+        $backendExists = $true
+    }
+    catch {
+        $backendExists = $false
+    }
+
+    if (-not $backendExists) {
+        throw "Terraform backend storage account '$stateStorageAccount' (resource group '$stateResourceGroup') does not exist. -ClearRecordsOnly only operates on an already-provisioned environment; run Deploy-Infra.ps1 -Environment $Environment (without -ClearRecordsOnly) first to provision it."
+    }
+
+    Write-Host "Resource group exists: $stateResourceGroup"
+    Write-Host "Storage account exists: $stateStorageAccount"
+}
+else {
+    Ensure-ResourceGroup -Name $stateResourceGroup -Location $Location
+    Ensure-StorageAccount -Name $stateStorageAccount -ResourceGroup $stateResourceGroup -Location $Location
+}
 $stateStorageKey = Get-StorageAccountKey -Name $stateStorageAccount -ResourceGroup $stateResourceGroup
-Ensure-StorageContainer -Name $stateContainer -StorageAccount $stateStorageAccount -StorageKey $stateStorageKey
+
+if ($ClearRecordsOnly) {
+    # As above: the storage account existing doesn't guarantee its tfstate container does (it
+    # could have been deleted independently) - check rather than let Ensure-StorageContainer
+    # silently create it. Caught and re-thrown with a redacted message on failure: Invoke-JsonCommand
+    # includes the full failed command in its exception, and this one carries the storage account
+    # key as a plain --account-key argument.
+    $containerExists = $false
+    try {
+        $containerExists = (Invoke-JsonCommand -Command @("az", "storage", "container", "exists", "--name", $stateContainer, "--account-name", $stateStorageAccount, "--account-key", $stateStorageKey, "--output", "json")).exists
+    }
+    catch {
+        throw "Failed to check whether the Terraform backend container '$stateContainer' exists in storage account '$stateStorageAccount'."
+    }
+
+    if (-not $containerExists) {
+        throw "Terraform backend container '$stateContainer' does not exist in storage account '$stateStorageAccount'. -ClearRecordsOnly only operates on an already-provisioned environment; run Deploy-Infra.ps1 -Environment $Environment (without -ClearRecordsOnly) first to provision it."
+    }
+    Write-Host "Storage container exists: $stateContainer"
+}
+else {
+    Ensure-StorageContainer -Name $stateContainer -StorageAccount $stateStorageAccount -StorageKey $stateStorageKey
+}
 
 Write-Section "Running Terraform"
 
@@ -748,6 +861,11 @@ try {
         "-backend-config=container_name=$stateContainer",
         "-backend-config=key=$stateKey"
     )
+
+    if ($ClearRecordsOnly) {
+        Invoke-ConfigurationSeeder -TerraformRoot $terraformRoot -RepoRoot $repoRoot -Environment $Environment -ClearRecordsOnly
+        return
+    }
 
     $tfVarsFile = "$Environment.tfvars"
 
@@ -857,6 +975,23 @@ try {
 }
 finally {
     Pop-Location
-    Remove-Item Env:\ARM_ACCESS_KEY -ErrorAction SilentlyContinue
-    Remove-Item Env:\GITHUB_TOKEN -ErrorAction SilentlyContinue
+}
+
+}
+finally {
+    # Restores whatever GITHUB_TOKEN/ARM_ACCESS_KEY the caller's shell had before this script
+    # ran (or removes them if it had none), regardless of where above this exited from - see the
+    # comment where $savedGithubToken/$savedCallerArmKey are captured.
+    if ($null -ne $savedCallerArmKey) {
+        $env:ARM_ACCESS_KEY = $savedCallerArmKey
+    }
+    else {
+        Remove-Item Env:\ARM_ACCESS_KEY -ErrorAction SilentlyContinue
+    }
+    if ($null -ne $savedGithubToken) {
+        $env:GITHUB_TOKEN = $savedGithubToken
+    }
+    else {
+        Remove-Item Env:\GITHUB_TOKEN -ErrorAction SilentlyContinue
+    }
 }
