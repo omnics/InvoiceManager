@@ -24,6 +24,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (top + panelHeight > window.innerHeight - margin) {
             top = buttonRect.top - panelHeight - 4;
         }
+        top = Math.max(top, margin);
 
         panel.style.left = `${left}px`;
         panel.style.top = `${top}px`;
