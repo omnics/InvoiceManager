@@ -671,6 +671,13 @@ $terraformRoot = Join-Path $repoRoot "infra/terraform"
 $savedGithubToken = $env:GITHUB_TOKEN
 $savedCallerArmKey = $env:ARM_ACCESS_KEY
 
+# Everything below is wrapped in this try/finally (not just the Terraform-running block further
+# down) so the caller's GITHUB_TOKEN/ARM_ACCESS_KEY are restored even when this script exits
+# early - e.g. a failed gh/az check, or -ClearRecordsOnly's own backend-existence guards, all of
+# which can run (and throw, or `exit`) before Terraform is ever touched. PowerShell still runs
+# `finally` for an `exit` reached inside `try`.
+try {
+
 Write-Section "Checking tools"
 
 if (-not (Test-Command "terraform")) {
@@ -965,6 +972,13 @@ try {
 }
 finally {
     Pop-Location
+}
+
+}
+finally {
+    # Restores whatever GITHUB_TOKEN/ARM_ACCESS_KEY the caller's shell had before this script
+    # ran (or removes them if it had none), regardless of where above this exited from - see the
+    # comment where $savedGithubToken/$savedCallerArmKey are captured.
     if ($null -ne $savedCallerArmKey) {
         $env:ARM_ACCESS_KEY = $savedCallerArmKey
     }
