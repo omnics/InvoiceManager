@@ -29,4 +29,19 @@ public sealed class FreeAgentHostsTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => FreeAgentHosts.Host((FreeAgentEnvironment)99));
     }
+
+    [Theory]
+    [InlineData(FreeAgentEnvironment.Sandbox, "acmeltd", "https://acmeltd.sandbox.freeagent.com/")]
+    [InlineData(FreeAgentEnvironment.Production, "acmeltd", "https://acmeltd.freeagent.com/")]
+    public void AppBaseUri_UsesTheAccountSubdomain_NotTheSharedApiHost(
+        FreeAgentEnvironment environment, string subdomain, string expected)
+    {
+        Assert.Equal(expected, FreeAgentHosts.AppBaseUri(environment, subdomain).ToString());
+    }
+
+    [Fact]
+    public void AppBaseUri_Throws_ForAnUnrecognisedEnvironment()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => FreeAgentHosts.AppBaseUri((FreeAgentEnvironment)99, "acmeltd"));
+    }
 }

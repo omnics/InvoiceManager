@@ -235,7 +235,9 @@ public sealed class CosmosInvoiceRecordRepositoryTests : IAsyncLifetime
             state: new FreeAgentInterventionPending(
                 BuildActualDetails(),
                 new OneDriveDetails("/drives/test/root:/Bills/Test/fa-pending.pdf", "test-drive", "fa-pending-item"),
-                new FreeAgentInterventionId("freeagent-intervention-1")));
+                new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1"),
+                new FreeAgentInterventionId("freeagent-intervention-1"),
+                Option.None));
 
         await repository!.CreateIfNotExistsAsync(expectedDue);
         await repository.CreateIfNotExistsAsync(retrievalErrorDue);

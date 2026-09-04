@@ -173,7 +173,12 @@ public sealed class InvoiceRecordResyncTests
     }
 
     private static InvoiceWorkflowState BuildInterventionPendingState(FreeAgentInterventionId interventionId) =>
-        new FreeAgentInterventionPending(Actuals.Build(new DateOnly(2025, 7, 5)), OneDrive, interventionId);
+        new FreeAgentInterventionPending(
+            Actuals.Build(new DateOnly(2025, 7, 5)),
+            OneDrive,
+            new FreeAgentBillIdentity("https://api.freeagent.com/v2/bills/1"),
+            interventionId,
+            Option.None);
 
     private static FreeAgentGuessIntervention BuildIntervention(FreeAgentInterventionId id, InvoiceRecordId recordId) =>
         new(

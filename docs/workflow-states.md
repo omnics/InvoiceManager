@@ -65,8 +65,10 @@ stateDiagram-v2
     FreeAgentBillReconciled --> FreeAgentAttached : PDF attached and verified
     FreeAgentBillReconciled --> FreeAgentError : amount mismatch on a bill without exactly one item, aggregate total still wrong after reconciling the item, unexpected existing attachment, bill locked, or verification failed
 
-    %% FreeAgentError is always retried, with no retry limit - mirroring RetrievalError.
-    %% It carries no matched-bill identity, so a retry always re-enters at matching.
+    %% FreeAgentError is always retried, with no retry limit - mirroring RetrievalError. It
+    %% carries the bill matching had already found (if any) purely for diagnosis/display - a
+    %% retry always re-enters at matching regardless, never skipping straight back to
+    %% reconciliation against that same bill.
     FreeAgentError --> FreeAgentBillMatched : bill (re)matched (retry)
     FreeAgentError --> FreeAgentMatchExpected : no bill matched this time (clears error)
     FreeAgentError --> FreeAgentError : technical/business failure again
@@ -110,6 +112,10 @@ stateDiagram-v2
         just recreate the same intervention. The record stays here until an
         administrator records a decision against the pending
         FreeAgentGuessIntervention (via IFreeAgentInterventionRepository),
-        which then resumes reconciliation directly.
+        which then resumes reconciliation directly. Always carries the
+        matched bill's identity - reached only after FreeAgentBillMatched -
+        plus any proof of an earlier successful upload to that same bill, so
+        a same-bill retry that reaches an intervention doesn't lose track of
+        it.
     end note
 ```

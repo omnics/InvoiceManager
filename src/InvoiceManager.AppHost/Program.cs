@@ -73,6 +73,7 @@ if (builder.Configuration.GetValue("AppHost:IncludeApplications", true))
         .WithEnvironment("KeyVault__Uri", keyVaultUri)
         // Local development is always against the FreeAgent sandbox company.
         .WithEnvironment("FreeAgent__Environment", "Sandbox")
+        .WithEnvironment("FreeAgent__Subdomain", "omnicssandbox")
         .WithEnvironment("AdminAuthorization__GroupObjectId", adminGroupObjectId)
         .WithEnvironment("Functions__BaseUrl", functions.GetEndpoint("http"))
         .WaitFor(cosmos)

@@ -149,8 +149,10 @@ internal sealed class InvoiceRecordDocument
     [JsonPropertyName("freeAgentBillUrl")]
     public string? FreeAgentBillUrl { get; init; }
 
-    // Present only for FreeAgentAttached: the verified attachment metadata, used to
-    // decide whether a later retry's upload is already correct.
+    // Present for FreeAgentAttached (verified attachment metadata, used to decide
+    // whether a later retry's upload is already correct), and optionally for
+    // FreeAgentError/FreeAgentInterventionPending (proof of an earlier successful
+    // upload to the same bill, carried through so a retry doesn't lose it).
     [JsonPropertyName("freeAgentAttachment")]
     public FreeAgentAttachmentMetadataDocument? FreeAgentAttachment { get; init; }
 
@@ -211,11 +213,14 @@ internal sealed class InvoiceRecordDocument
         nameof(FreeAgentAttached) => new FreeAgentAttached(
             RequiredActualDetails(), RequiredOneDriveDetails(), RequiredFreeAgentBillIdentity(), RequiredFreeAgentAttachment()),
         nameof(FreeAgentInterventionPending) => new FreeAgentInterventionPending(
-            RequiredActualDetails(), RequiredOneDriveDetails(), RequiredFreeAgentInterventionId()),
+            RequiredActualDetails(), RequiredOneDriveDetails(), RequiredFreeAgentBillIdentity(), RequiredFreeAgentInterventionId(),
+            FreeAgentAttachment is { } pendingAttachment ? pendingAttachment.ToMetadata() : Option.None),
         nameof(FreeAgentError) => new FreeAgentError(
             RequiredActualDetails(), RequiredOneDriveDetails(), LastError ?? string.Empty,
-            FreeAgentBillUrl is { } attemptedBillUrl && FreeAgentAttachment is { } attemptedAttachment
-                ? new FreeAgentAttemptedAttachment(new FreeAgentBillIdentity(attemptedBillUrl), attemptedAttachment.ToMetadata())
+            FreeAgentBillUrl is { } billUrl
+                ? new FreeAgentErrorBillContext(
+                    new FreeAgentBillIdentity(billUrl),
+                    FreeAgentAttachment is { } attachment ? attachment.ToMetadata() : Option.None)
                 : Option.None),
         _ => throw new InvalidOperationException(
             $"Invoice record document '{Id}' has unrecognised status '{Status}'."),
@@ -326,7 +331,11 @@ internal sealed class InvoiceRecordDocument
             Status = nameof(FreeAgentInterventionPending),
             ActualDetails = ActualInvoiceDetailsDocument.FromDetails(pending.ActualDetails),
             OneDriveDetails = OneDriveDetailsDocument.FromDetails(pending.OneDriveDetails),
+            FreeAgentBillUrl = pending.Bill.Url.OriginalString,
             FreeAgentInterventionId = pending.InterventionId.Value,
+            FreeAgentAttachment = pending.AttemptedAttachment is FreeAgentAttachmentMetadata pendingAttachment
+                ? FreeAgentAttachmentMetadataDocument.FromMetadata(pendingAttachment)
+                : null,
         },
         FreeAgentError freeAgentError => new()
         {
@@ -334,11 +343,9 @@ internal sealed class InvoiceRecordDocument
             ActualDetails = ActualInvoiceDetailsDocument.FromDetails(freeAgentError.ActualDetails),
             OneDriveDetails = OneDriveDetailsDocument.FromDetails(freeAgentError.OneDriveDetails),
             LastError = freeAgentError.ErrorMessage,
-            FreeAgentBillUrl = freeAgentError.AttemptedAttachment is FreeAgentAttemptedAttachment attempted
-                ? attempted.Bill.Url.OriginalString
-                : null,
-            FreeAgentAttachment = freeAgentError.AttemptedAttachment is FreeAgentAttemptedAttachment attempted2
-                ? FreeAgentAttachmentMetadataDocument.FromMetadata(attempted2.Attachment)
+            FreeAgentBillUrl = freeAgentError.BillContext switch { FreeAgentErrorBillContext context => context.Bill.Url.OriginalString, None => null },
+            FreeAgentAttachment = freeAgentError.BillContext is FreeAgentErrorBillContext { AttemptedAttachment: FreeAgentAttachmentMetadata metadata }
+                ? FreeAgentAttachmentMetadataDocument.FromMetadata(metadata)
                 : null,
         },
     };

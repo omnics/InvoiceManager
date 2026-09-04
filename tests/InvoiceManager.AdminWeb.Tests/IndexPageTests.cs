@@ -1,12 +1,15 @@
 using InvoiceManager.AdminWeb.Pages;
 using InvoiceManager.AdminWeb.Services;
 using InvoiceManager.Core;
+using InvoiceManager.Core.Integrations.FreeAgent;
+using InvoiceManager.Infrastructure.FreeAgentAuthorization;
 using InvoiceManager.Infrastructure.MicrosoftAuthorization;
 using InvoiceManager.TestSupport;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.Extensions.Options;
 
 namespace InvoiceManager.AdminWeb.Tests;
 
@@ -125,6 +128,130 @@ public sealed class IndexPageTests
         Assert.Equal(["Alpha", "Zeta"], model.Rows.Select(r => r.DisplayName));
     }
 
+    [Theory]
+    [InlineData(
+        "https://omnics-my.sharepoint.com/personal/joshua_omnics_tech/Documents/Test/Bills/" +
+        "Azure%20+%20Visual%20Studio/2026-06-09%20G164045971%20%C2%A340.01%20inc.pdf",
+        true)] // A real Graph webUrl - Uri.IsWellFormedUriString rejects this (unencoded '+' in the path)
+               // even though it's a perfectly good, working link; must not be used here.
+    [InlineData("https://example.com/file.pdf", true)]
+    [InlineData("http://example.com/file.pdf", false)] // Not https.
+    [InlineData("01ABCDEF", false)] // OneDriveLocation's bare-item-ID fallback when Graph reports no webUrl.
+    public void IsHttpsUrl_AcceptsRealWebUrls_ButRejectsNonHttpsOrNonUrlValues(string location, bool expected)
+    {
+        var model = CreateIndexModel();
+
+        Assert.Equal(expected, model.IsHttpsUrl(location));
+    }
+
+    [Fact]
+    public void DeriveOneDriveFolderUrl_TrimsTheFileNameOffARealWebUrl_ToGetTheContainingFolder()
+    {
+        // Graph's parentReference (an itemReference) has no webUrl property at all, so the
+        // folder link has to be derived from the file's own webUrl - a literal server-relative
+        // path under the document library for both OneDrive and SharePoint.
+        var model = CreateIndexModel();
+        const string fileUrl =
+            "https://omnics-my.sharepoint.com/personal/joshua_omnics_tech/Documents/Test/Bills/" +
+            "Azure%20+%20Visual%20Studio/2026-06-09%20G164045971%20%C2%A340.01%20inc.pdf";
+
+        Assert.Equal(
+            "https://omnics-my.sharepoint.com/personal/joshua_omnics_tech/Documents/Test/Bills/" +
+            "Azure%20+%20Visual%20Studio",
+            model.DeriveOneDriveFolderUrl(fileUrl));
+    }
+
+    [Theory]
+    [InlineData("http://example.com/Bills/file.pdf")] // Not https.
+    [InlineData("01ABCDEF")] // OneDriveLocation's bare-item-ID fallback when Graph reports no webUrl.
+    [InlineData("https://example.com")] // No path at all - nothing to trim to.
+    public void DeriveOneDriveFolderUrl_ReturnsNull_WhenThereIsNoUsableFolderPathToTrimTo(string fileLocation)
+    {
+        var model = CreateIndexModel();
+
+        Assert.Null(model.DeriveOneDriveFolderUrl(fileLocation));
+    }
+
+    [Fact]
+    public void HasAnyAction_IsFalse_WhenUnauthorizedAndTheRowHasNoUsableOneDriveOrFreeAgentLink()
+    {
+        // No workflow authorization (so no "Edit configuration"/Resync), a bare-item-ID OneDrive
+        // fallback (not a usable link), and no matched FreeAgent bill at all - the menu must not
+        // render an ellipsis onto an empty panel.
+        var model = CreateIndexModel(hasWorkflowAuthorization: false);
+        var row = new InvoiceSyncRow(
+            new InvoiceConfigurationId("acme"), IntegrationType.MicrosoftBilling, "Acme invoice",
+            IsActive: true, ExpectedDate: new DateOnly(2025, 7, 1),
+            State: new RetrievalError("transient failure"), IsMostRecent: true);
+
+        Assert.False(model.HasAnyAction(row));
+    }
+
+    [Fact]
+    public void HasAnyAction_IsFalse_WhenUnauthorizedAndTheOnlyOneDriveValueIsTheNonUrlFallback()
+    {
+        var model = CreateIndexModel(hasWorkflowAuthorization: false);
+        var actualDetails = Actuals.Build(new DateOnly(2025, 7, 1));
+        var row = new InvoiceSyncRow(
+            new InvoiceConfigurationId("acme"), IntegrationType.MicrosoftBilling, "Acme invoice",
+            IsActive: true, ExpectedDate: new DateOnly(2025, 7, 1),
+            State: new SavedToOneDrive(actualDetails, new OneDriveDetails("01ABCDEF", "test-drive", "test-item")),
+            IsMostRecent: true);
+
+        Assert.False(model.HasAnyAction(row));
+    }
+
+    [Fact]
+    public void HasAnyAction_IsTrue_WhenUnauthorizedButTheRowHasAUsableOneDriveFileLink()
+    {
+        var model = CreateIndexModel(hasWorkflowAuthorization: false);
+        var actualDetails = Actuals.Build(new DateOnly(2025, 7, 1));
+        var row = new InvoiceSyncRow(
+            new InvoiceConfigurationId("acme"), IntegrationType.MicrosoftBilling, "Acme invoice",
+            IsActive: true, ExpectedDate: new DateOnly(2025, 7, 1),
+            State: new SavedToOneDrive(
+                actualDetails,
+                new OneDriveDetails("https://example.com/Bills/invoice.pdf", "test-drive", "test-item")),
+            IsMostRecent: true);
+
+        Assert.True(model.HasAnyAction(row));
+    }
+
+    [Fact]
+    public void HasAnyAction_IsFalse_WhenUnauthorizedAndTheMatchedBillHasNoConfiguredWebLink()
+    {
+        // FreeAgent:Subdomain isn't configured for this deployment, so FreeAgentBillUrl can't
+        // build a link even though the row has a matched bill.
+        var model = CreateIndexModel(hasWorkflowAuthorization: false, freeAgentSubdomain: "");
+        var actualDetails = Actuals.Build(new DateOnly(2025, 7, 1));
+        var row = new InvoiceSyncRow(
+            new InvoiceConfigurationId("acme"), IntegrationType.MicrosoftBilling, "Acme invoice",
+            IsActive: true, ExpectedDate: new DateOnly(2025, 7, 1),
+            State: new FreeAgentBillMatched(
+                actualDetails,
+                new OneDriveDetails("01ABCDEF", "test-drive", "test-item"),
+                new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1")),
+            IsMostRecent: true);
+
+        Assert.False(model.HasAnyAction(row));
+    }
+
+    [Fact]
+    public async Task HasAnyAction_IsTrue_WhenWorkflowAuthorizationIsPresent_RegardlessOfLinks()
+    {
+        // "Edit configuration" is always available to an authorized session, even for a row with
+        // no usable OneDrive/FreeAgent link yet. HasWorkflowAuthorization is only populated by a
+        // load, so this test has to actually run one rather than just configuring the fake store.
+        var model = CreateIndexModel(hasWorkflowAuthorization: true);
+        await model.OnGetAsync();
+        var row = new InvoiceSyncRow(
+            new InvoiceConfigurationId("acme"), IntegrationType.MicrosoftBilling, "Acme invoice",
+            IsActive: true, ExpectedDate: new DateOnly(2025, 7, 1),
+            State: new Expected(Option.None), IsMostRecent: true);
+
+        Assert.True(model.HasAnyAction(row));
+    }
+
     [Fact]
     public async Task OnGetAsync_TogglesToDescending_WhenDescendingParamIsExplicitlyTrue()
     {
@@ -225,7 +352,8 @@ public sealed class IndexPageTests
         InvoiceSyncOverview? overview = null,
         IInvoiceRecordResyncTrigger? resyncTrigger = null,
         bool hasWorkflowAuthorization = true,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        string freeAgentSubdomain = "acmeltd")
     {
         var records = new InMemoryInvoiceRecordRepository();
         var model = new IndexModel(
@@ -233,7 +361,8 @@ public sealed class IndexPageTests
             overview ?? new InvoiceSyncOverview(new InvoiceConfigurationService(new FakeConfigurationRepository()), records),
             new FakeMicrosoftAuthorizationStore(hasWorkflowAuthorization),
             resyncTrigger ?? new FakeInvoiceRecordResyncTrigger(),
-            timeProvider ?? new FixedTimeProvider(new DateTimeOffset(2026, 9, 3, 14, 32, 31, TimeSpan.Zero)));
+            timeProvider ?? new FixedTimeProvider(new DateTimeOffset(2026, 9, 3, 14, 32, 31, TimeSpan.Zero)),
+            Options.Create(new FreeAgentOptions { Environment = FreeAgentEnvironment.Sandbox, Subdomain = freeAgentSubdomain }));
 
         var httpContext = new DefaultHttpContext
         {

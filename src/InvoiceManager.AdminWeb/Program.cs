@@ -54,7 +54,9 @@ builder.Services.AddOptions<AdminAuthorizationOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.AddOptions<FreeAgentOptions>()
-    .Bind(builder.Configuration.GetSection(FreeAgentOptions.SectionName));
+    .Bind(builder.Configuration.GetSection(FreeAgentOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<FreeAgentOptions>, FreeAgentOptionsValidator>();
 builder.Services
     .AddOptions<FreeAgentAuthorizationOptions>()
     .Bind(builder.Configuration.GetSection(FreeAgentAuthorizationOptions.SectionName))

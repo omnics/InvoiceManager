@@ -1,6 +1,7 @@
 @page
 @model IndexModel
 @using InvoiceManager.Core
+@using InvoiceManager.Core.Integrations.FreeAgent
 @{
     ViewData["Title"] = "Invoice processing";
 }
@@ -71,41 +72,59 @@
                                     @(row.Diagnostic is string diagnostic ? diagnostic : "—")
                                 </div>
                                 <div role="cell" class="actions-cell">
-                                    @if (Model.HasWorkflowAuthorization)
+                                    @if (Model.HasAnyAction(row))
                                     {
-                                        <details class="row-actions" name="row-actions">
-                                            <summary aria-label="Actions for @row.DisplayName"></summary>
-                                            <div class="row-actions-panel">
+                                    <details class="row-actions" name="row-actions">
+                                        <summary aria-label="Actions for @row.DisplayName"></summary>
+                                        <div class="row-actions-panel">
+                                            @if (Model.HasWorkflowAuthorization)
+                                            {
                                                 <a class="row-action-item" asp-page="/Configurations/Edit" asp-route-id="@row.ConfigurationId.Value" asp-route-integrationType="@row.IntegrationType">Edit configuration</a>
-                                                @if (row.CanResync)
+                                            }
+                                            @if (row.OneDrive is OneDriveDetails oneDrive)
+                                            {
+                                                @if (Model.IsHttpsUrl(oneDrive.OneDriveLocation))
                                                 {
-                                                    if (row.ResyncRequiresConfirmation)
-                                                    {
-                                                        <div class="row-action-confirm">
-                                                            <p>This will supersede the pending Guess-removal intervention without a decision being recorded.</p>
-                                                            <form method="post">
-                                                                <input type="hidden" name="id" value="@row.ConfigurationId.Value" />
-                                                                <input type="hidden" name="integrationType" value="@row.IntegrationType" />
-                                                                <input type="hidden" name="sort" value="@Model.Sort" />
-                                                                <input type="hidden" name="descending" value="@Model.SortDescending" />
-                                                                <label><input type="checkbox" name="confirmed" value="true" /> Confirm</label>
-                                                                <button asp-page-handler="ResyncRecord" class="row-action-item">Resync anyway</button>
-                                                            </form>
-                                                        </div>
-                                                    }
-                                                    else
-                                                    {
+                                                    <a class="row-action-item" href="@oneDrive.OneDriveLocation">Open file</a>
+                                                }
+                                                @if (Model.DeriveOneDriveFolderUrl(oneDrive.OneDriveLocation) is string folderLocation)
+                                                {
+                                                    <a class="row-action-item" href="@folderLocation">Open folder</a>
+                                                }
+                                            }
+                                            @if (row.FreeAgentBill is FreeAgentBillIdentity bill && Model.FreeAgentBillUrl(bill) is string billUrl)
+                                            {
+                                                <a class="row-action-item" href="@billUrl">Open FreeAgent bill</a>
+                                            }
+                                            @if (Model.HasWorkflowAuthorization && row.CanResync)
+                                            {
+                                                if (row.ResyncRequiresConfirmation)
+                                                {
+                                                    <div class="row-action-confirm">
+                                                        <p>This will supersede the pending Guess-removal intervention without a decision being recorded.</p>
                                                         <form method="post">
                                                             <input type="hidden" name="id" value="@row.ConfigurationId.Value" />
                                                             <input type="hidden" name="integrationType" value="@row.IntegrationType" />
                                                             <input type="hidden" name="sort" value="@Model.Sort" />
                                                             <input type="hidden" name="descending" value="@Model.SortDescending" />
-                                                            <button asp-page-handler="ResyncRecord" class="row-action-item">Resync</button>
+                                                            <label><input type="checkbox" name="confirmed" value="true" /> Confirm</label>
+                                                            <button asp-page-handler="ResyncRecord" class="row-action-item">Resync anyway</button>
                                                         </form>
-                                                    }
+                                                    </div>
                                                 }
-                                            </div>
-                                        </details>
+                                                else
+                                                {
+                                                    <form method="post">
+                                                        <input type="hidden" name="id" value="@row.ConfigurationId.Value" />
+                                                        <input type="hidden" name="integrationType" value="@row.IntegrationType" />
+                                                        <input type="hidden" name="sort" value="@Model.Sort" />
+                                                        <input type="hidden" name="descending" value="@Model.SortDescending" />
+                                                        <button asp-page-handler="ResyncRecord" class="row-action-item">Resync</button>
+                                                    </form>
+                                                }
+                                            }
+                                        </div>
+                                    </details>
                                     }
                                 </div>
                             </div>

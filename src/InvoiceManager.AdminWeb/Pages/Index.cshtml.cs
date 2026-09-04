@@ -1,8 +1,11 @@
 using InvoiceManager.AdminWeb.Services;
 using InvoiceManager.Core;
+using InvoiceManager.Core.Integrations.FreeAgent;
+using InvoiceManager.Infrastructure.FreeAgentAuthorization;
 using InvoiceManager.Infrastructure.MicrosoftAuthorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.Extensions.Options;
 
 namespace InvoiceManager.AdminWeb.Pages;
 
@@ -21,7 +24,8 @@ public class IndexModel(
     InvoiceSyncOverview overview,
     IMicrosoftAuthorizationStore authorizationStore,
     IInvoiceRecordResyncTrigger resyncTrigger,
-    TimeProvider timeProvider) : PageModel
+    TimeProvider timeProvider,
+    IOptions<FreeAgentOptions> freeAgentOptions) : PageModel
 {
     public IReadOnlyList<InvoiceSyncRow> Rows { get; private set; } = [];
     public bool HasWorkflowAuthorization { get; private set; }
@@ -104,6 +108,54 @@ public class IndexModel(
         SetStatus(message, isWarning);
         return RedirectToCurrentSort();
     }
+
+    /// <summary>
+    /// The bill's link in FreeAgent's own web app, or null if <c>FreeAgent:Subdomain</c> isn't
+    /// configured for this deployment - see <see cref="FreeAgentBillWebLinkExtensions.WebUrl"/>.
+    /// </summary>
+    public string? FreeAgentBillUrl(FreeAgentBillIdentity bill) =>
+        bill.WebUrl(freeAgentOptions.Value) is Uri url ? url.ToString() : null;
+
+    /// <summary>
+    /// Whether <paramref name="location"/> is safe to render as an "Open file"/"Open folder"
+    /// link - <see cref="OneDriveDetails.OneDriveLocation"/> falls back to a bare item ID (not a
+    /// URL at all) when Graph didn't report a webUrl, and that must never be linked. Deliberately
+    /// not <see cref="Uri.IsWellFormedUriString"/>, which is stricter than real SharePoint webUrls
+    /// satisfy (e.g. an unencoded '+' in a folder name) and would reject perfectly good links.
+    /// </summary>
+    public bool IsHttpsUrl(string location) =>
+        Uri.TryCreate(location, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps;
+
+    /// <summary>
+    /// The containing folder's browsable OneDrive URL, or null if <paramref name="fileLocation"/>
+    /// isn't a usable https URL or has no path segment to trim. Microsoft Graph's
+    /// <c>itemReference</c> (what a driveItem's <c>parentReference</c> actually is) has no
+    /// <c>webUrl</c> property - https://learn.microsoft.com/graph/api/resources/itemreference -
+    /// so the only way to get the folder's link without an extra Graph call per file is to derive
+    /// it from the file's own webUrl, which is a literal server-relative path under the document
+    /// library for both OneDrive and SharePoint document libraries.
+    /// </summary>
+    public string? DeriveOneDriveFolderUrl(string fileLocation)
+    {
+        if (!IsHttpsUrl(fileLocation))
+            return null;
+
+        var lastSlash = fileLocation.LastIndexOf('/');
+        var schemeEnd = fileLocation.IndexOf("://", StringComparison.Ordinal) + 3;
+        return lastSlash > schemeEnd ? fileLocation[..lastSlash] : null;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="row"/> has at least one action the actions menu could actually
+    /// render - the menu itself must not appear otherwise (an ellipsis opening onto an empty
+    /// panel), e.g. an unauthorized session viewing a row that hasn't reached OneDrive/FreeAgent
+    /// yet, or a saved row whose OneDrive location is the non-URL fallback and has no FreeAgent
+    /// bill link configured.
+    /// </summary>
+    public bool HasAnyAction(InvoiceSyncRow row) =>
+        HasWorkflowAuthorization ||
+        (row.OneDrive is OneDriveDetails oneDrive && (IsHttpsUrl(oneDrive.OneDriveLocation) || DeriveOneDriveFolderUrl(oneDrive.OneDriveLocation) is not null)) ||
+        (row.FreeAgentBill is FreeAgentBillIdentity bill && FreeAgentBillUrl(bill) is not null);
 
     private void SetStatus(string message, bool isWarning)
     {

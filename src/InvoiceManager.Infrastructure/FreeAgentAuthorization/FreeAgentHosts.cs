@@ -26,4 +26,17 @@ public static class FreeAgentHosts
 
     public static Uri TokenEndpoint(FreeAgentEnvironment environment) =>
         new($"https://{Host(environment)}/v2/token_endpoint");
+
+    /// <summary>
+    /// The base of this account's browsable FreeAgent web app (not the API host above) -
+    /// e.g. https://acmeltd.freeagent.com/ or https://acmeltd.sandbox.freeagent.com/ - for
+    /// building links an operator can click to view a resource in FreeAgent's own UI.
+    /// </summary>
+    public static Uri AppBaseUri(FreeAgentEnvironment environment, string subdomain) => environment switch
+    {
+        FreeAgentEnvironment.Sandbox => new Uri($"https://{subdomain}.sandbox.freeagent.com/"),
+        FreeAgentEnvironment.Production => new Uri($"https://{subdomain}.freeagent.com/"),
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(environment), environment, "Unrecognised FreeAgent environment."),
+    };
 }
