@@ -16,6 +16,15 @@ param(
 
     [switch] $ClearDatabase,
 
+    # Skips straight to clearing invoice-records/freeagent-interventions (data-plane deletes,
+    # invoice-configurations untouched) against an already-provisioned environment, then exits -
+    # no GitHub auth, terraform plan/apply, FreeAgent credential check, or AdminWeb local config.
+    # Only reconfigures the Terraform backend (so the right environment's Cosmos account is
+    # resolved) before invoking the seeder. Mutually exclusive with -ClearDatabase and -PlanOnly.
+    # For winding a Test environment's run history back to empty between manual test cycles - see
+    # docs/deployment.md's "Resetting a Test environment's run history" section.
+    [switch] $ClearRecordsOnly,
+
     # GitHub-less apply: pass -var=manage_github=false and skip every gh interaction (tool
     # check, auth/token, owner/repo/reviewer derivation, and stale-variable deletion). For
     # operators who can provision Azure but cannot administer GitHub. The Terraform-owned CI
@@ -44,6 +53,14 @@ param(
 
 if ($PublishAdminWebImage -and $AdminWebImage) {
     throw "-PublishAdminWebImage and -AdminWebImage are mutually exclusive."
+}
+
+if ($ClearDatabase -and $ClearRecordsOnly) {
+    throw "-ClearDatabase and -ClearRecordsOnly are mutually exclusive."
+}
+
+if ($PlanOnly -and $ClearRecordsOnly) {
+    throw "-PlanOnly and -ClearRecordsOnly are mutually exclusive."
 }
 
 Set-StrictMode -Version Latest
@@ -463,10 +480,11 @@ function Invoke-ConfigurationSeeder {
         [string] $TerraformRoot,
         [string] $RepoRoot,
         [string] $Environment,
-        [switch] $ClearDatabase
+        [switch] $ClearDatabase,
+        [switch] $ClearRecordsOnly
     )
 
-    Write-Section "Seeding invoice configurations"
+    Write-Section $(if ($ClearRecordsOnly) { "Clearing invoice records" } else { "Seeding invoice configurations" })
 
     Push-Location $TerraformRoot
     try {
@@ -494,11 +512,20 @@ function Invoke-ConfigurationSeeder {
     $env:CosmosDatabase = $cosmosDatabase
 
     # Forward the environment so the seeder nests test downloads under a "Test" folder, and
-    # optionally clear the containers first for a clean re-seed.
-    $seederArgs = @($seedFile, "--environment", $Environment)
-    if ($ClearDatabase) {
-        $seederArgs += "--clear-database"
-        Write-Host "Clearing database contents before seeding (--clear-database)."
+    # optionally clear the containers first for a clean re-seed - or, for -ClearRecordsOnly,
+    # clear invoice-records/freeagent-interventions and exit without touching the seed file or
+    # invoice-configurations at all.
+    $seederArgs = @("--environment", $Environment)
+    if ($ClearRecordsOnly) {
+        $seederArgs += "--clear-records-only"
+        Write-Host "Clearing invoice-records and freeagent-interventions only (--clear-records-only); invoice-configurations untouched."
+    }
+    else {
+        $seederArgs = @($seedFile) + $seederArgs
+        if ($ClearDatabase) {
+            $seederArgs += "--clear-database"
+            Write-Host "Clearing database contents before seeding (--clear-database)."
+        }
     }
 
     try {
@@ -637,7 +664,7 @@ if (-not (Test-Command "az")) {
     exit 1
 }
 
-if (-not $SkipGitHubManagement -and -not (Test-Command "gh")) {
+if (-not $SkipGitHubManagement -and -not $ClearRecordsOnly -and -not (Test-Command "gh")) {
     Show-GitHubCliInstallHelp
     exit 1
 }
@@ -653,24 +680,36 @@ $tenantId = $account.tenantId
 Write-Host "Subscription: $($account.name) ($activeSubscriptionId)"
 Write-Host "Tenant: $tenantId"
 
-Write-Section "Deriving operator identity"
+$functionInvokerUserObjectId = ""
 
-# The signed-in user is granted the Functions "Invoke" app role so they can call the
-# endpoint directly. Derived from the authenticated context, not hardcoded (see
-# [[feedback-no-hardcoded-account-identity]]). A service-principal login (e.g. CI) has no
-# signed-in user, so this stays empty and Terraform manages no operator assignment.
-$functionInvokerUserObjectId = az ad signed-in-user show --query id --output tsv 2>$null
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($functionInvokerUserObjectId)) {
-    $functionInvokerUserObjectId = ""
-    $global:LASTEXITCODE = 0
-    Write-Host "No signed-in user (service-principal login?); no operator Invoke assignment will be managed."
+if ($ClearRecordsOnly) {
+    Write-Section "Skipping operator identity derivation (-ClearRecordsOnly)"
+    Write-Host "No terraform plan/apply will run, so no operator Invoke assignment is needed here."
 }
 else {
-    $functionInvokerUserObjectId = $functionInvokerUserObjectId.Trim()
-    Write-Host "Operator object id: $functionInvokerUserObjectId"
+    Write-Section "Deriving operator identity"
+
+    # The signed-in user is granted the Functions "Invoke" app role so they can call the
+    # endpoint directly. Derived from the authenticated context, not hardcoded (see
+    # [[feedback-no-hardcoded-account-identity]]). A service-principal login (e.g. CI) has no
+    # signed-in user, so this stays empty and Terraform manages no operator assignment.
+    $functionInvokerUserObjectId = az ad signed-in-user show --query id --output tsv 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($functionInvokerUserObjectId)) {
+        $functionInvokerUserObjectId = ""
+        $global:LASTEXITCODE = 0
+        Write-Host "No signed-in user (service-principal login?); no operator Invoke assignment will be managed."
+    }
+    else {
+        $functionInvokerUserObjectId = $functionInvokerUserObjectId.Trim()
+        Write-Host "Operator object id: $functionInvokerUserObjectId"
+    }
 }
 
-if ($SkipGitHubManagement) {
+if ($ClearRecordsOnly) {
+    Write-Section "Skipping GitHub management (-ClearRecordsOnly)"
+    Write-Host "No terraform plan/apply will run, so no gh interaction occurs."
+}
+elseif ($SkipGitHubManagement) {
     Write-Section "Skipping GitHub management (-SkipGitHubManagement)"
     Write-Host "Terraform will run with manage_github=false: the CI identity, deploy environment,"
     Write-Host "secrets, and variables are NOT managed, and no gh interaction occurs."
@@ -748,6 +787,11 @@ try {
         "-backend-config=container_name=$stateContainer",
         "-backend-config=key=$stateKey"
     )
+
+    if ($ClearRecordsOnly) {
+        Invoke-ConfigurationSeeder -TerraformRoot $terraformRoot -RepoRoot $repoRoot -Environment $Environment -ClearRecordsOnly
+        return
+    }
 
     $tfVarsFile = "$Environment.tfvars"
 
