@@ -664,10 +664,12 @@ function Remove-StaleDeployTargetVariables {
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $terraformRoot = Join-Path $repoRoot "infra/terraform"
 
-# Saved so the script's own GITHUB_TOKEN (sourced from 'gh auth token' below) can be removed on
-# exit without clobbering a token the caller's shell already had set - mirrors how
-# Invoke-ConfigurationSeeder already saves/restores ARM_ACCESS_KEY.
+# Saved so the script's own GITHUB_TOKEN and ARM_ACCESS_KEY (the latter set below to the
+# Terraform backend storage key) can be removed on exit without clobbering values the caller's
+# shell already had set. Invoke-ConfigurationSeeder's own save/restore of ARM_ACCESS_KEY only
+# covers the backend key this script just assigned, not whatever the caller had before that.
 $savedGithubToken = $env:GITHUB_TOKEN
+$savedCallerArmKey = $env:ARM_ACCESS_KEY
 
 Write-Section "Checking tools"
 
@@ -815,8 +817,17 @@ $stateStorageKey = Get-StorageAccountKey -Name $stateStorageAccount -ResourceGro
 if ($ClearRecordsOnly) {
     # As above: the storage account existing doesn't guarantee its tfstate container does (it
     # could have been deleted independently) - check rather than let Ensure-StorageContainer
-    # silently create it.
-    $containerExists = (Invoke-JsonCommand -Command @("az", "storage", "container", "exists", "--name", $stateContainer, "--account-name", $stateStorageAccount, "--account-key", $stateStorageKey, "--output", "json")).exists
+    # silently create it. Caught and re-thrown with a redacted message on failure: Invoke-JsonCommand
+    # includes the full failed command in its exception, and this one carries the storage account
+    # key as a plain --account-key argument.
+    $containerExists = $false
+    try {
+        $containerExists = (Invoke-JsonCommand -Command @("az", "storage", "container", "exists", "--name", $stateContainer, "--account-name", $stateStorageAccount, "--account-key", $stateStorageKey, "--output", "json")).exists
+    }
+    catch {
+        throw "Failed to check whether the Terraform backend container '$stateContainer' exists in storage account '$stateStorageAccount'."
+    }
+
     if (-not $containerExists) {
         throw "Terraform backend container '$stateContainer' does not exist in storage account '$stateStorageAccount'. -ClearRecordsOnly only operates on an already-provisioned environment; run Deploy-Infra.ps1 -Environment $Environment (without -ClearRecordsOnly) first to provision it."
     }
@@ -954,7 +965,12 @@ try {
 }
 finally {
     Pop-Location
-    Remove-Item Env:\ARM_ACCESS_KEY -ErrorAction SilentlyContinue
+    if ($null -ne $savedCallerArmKey) {
+        $env:ARM_ACCESS_KEY = $savedCallerArmKey
+    }
+    else {
+        Remove-Item Env:\ARM_ACCESS_KEY -ErrorAction SilentlyContinue
+    }
     if ($null -ne $savedGithubToken) {
         $env:GITHUB_TOKEN = $savedGithubToken
     }
