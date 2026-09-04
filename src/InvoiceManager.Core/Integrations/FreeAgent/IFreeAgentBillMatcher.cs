@@ -8,6 +8,7 @@ namespace InvoiceManager.Core.Integrations.FreeAgent;
 /// </summary>
 public sealed record FreeAgentBillSearchCriteria(
     FreeAgentContactIdentity ContactUrl,
+    string ContactDisplayName,
     DateOnly ExpectedDate,
     int DateToleranceDays,
     Money ExpectedAmount,
