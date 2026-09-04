@@ -1,4 +1,6 @@
 using System.Net;
+using InvoiceManager.Core;
+using InvoiceManager.Core.Integrations.FreeAgent;
 using InvoiceManager.Infrastructure.FreeAgentAuthorization;
 using InvoiceManager.TestSupport;
 using Microsoft.Extensions.Options;
@@ -25,6 +27,14 @@ public sealed class FreeAgentTokenProviderTests
         }
 
         public Task ClearRefreshTokenAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<Option<FreeAgentSubdomain>> ReadSubdomainAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<Option<FreeAgentSubdomain>>(Option.None);
+
+        public Task SaveSubdomainAsync(FreeAgentSubdomain subdomain, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task ClearSubdomainAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     [Fact]

@@ -458,9 +458,17 @@ It registers a second named OAuth scheme (`FreeAgentWorkflowAuthorization`,
 via `AddOAuth`) whose authorization/token endpoints are derived from
 `FreeAgent:Environment` (`Sandbox` or `Production` — see `FreeAgentHosts`),
 never from a separately configurable URL. On successful authorization, the
-refresh token is written straight to Key Vault
-(`FreeAgentAuthorization--RefreshToken`, via `IFreeAgentAuthorizationStore`)
-and never placed in the authentication cookie.
+handler also calls FreeAgent's own `GET /v2/company` resource with the
+freshly-issued access token (`IFreeAgentCompanyLookup`) to discover which
+account was just authorized. Both the refresh token and that account's
+web-app subdomain are written straight to Key Vault
+(`FreeAgentAuthorization--RefreshToken`/`--Subdomain`, via
+`IFreeAgentAuthorizationStore`) and never placed in the authentication
+cookie. The subdomain is deliberately captured here rather than configured
+(e.g. via Terraform) — it identifies which FreeAgent account was actually
+authorized, which cannot be known at infrastructure-provisioning time and
+would otherwise risk silently drifting out of sync with it. Resetting
+FreeAgent authorization clears both secrets together.
 
 Two separate FreeAgent OAuth apps exist, registered manually at
 [dev.freeagent.com](https://dev.freeagent.com/) (no Terraform provider — see
@@ -722,6 +730,7 @@ Example secrets in Key Vault:
 - `FreeAgentAuthorization--ClientId`
 - `FreeAgentAuthorization--ClientSecret`
 - `FreeAgentAuthorization--RefreshToken`
+- `FreeAgentAuthorization--Subdomain`
 - `InvoiceIntegrations--AzureTenantId`
 - `InvoiceIntegrations--AzureClientId`
 - `InvoiceIntegrations--AzureClientSecret`

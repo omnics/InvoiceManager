@@ -1,3 +1,4 @@
+using InvoiceManager.Core.Integrations.FreeAgent;
 using InvoiceManager.Infrastructure.FreeAgentAuthorization;
 
 namespace InvoiceManager.Infrastructure.Tests;
@@ -36,12 +37,18 @@ public sealed class FreeAgentHostsTests
     public void AppBaseUri_UsesTheAccountSubdomain_NotTheSharedApiHost(
         FreeAgentEnvironment environment, string subdomain, string expected)
     {
-        Assert.Equal(expected, FreeAgentHosts.AppBaseUri(environment, subdomain).ToString());
+        Assert.Equal(expected, FreeAgentHosts.AppBaseUri(environment, RequireSubdomain(subdomain)).ToString());
     }
 
     [Fact]
     public void AppBaseUri_Throws_ForAnUnrecognisedEnvironment()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => FreeAgentHosts.AppBaseUri((FreeAgentEnvironment)99, "acmeltd"));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => FreeAgentHosts.AppBaseUri((FreeAgentEnvironment)99, RequireSubdomain("acmeltd")));
     }
+
+    private static FreeAgentSubdomain RequireSubdomain(string value) =>
+        FreeAgentSubdomain.TryParse(value) is FreeAgentSubdomain subdomain
+            ? subdomain
+            : throw new InvalidOperationException($"'{value}' is not a valid test subdomain.");
 }
