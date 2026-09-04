@@ -1,3 +1,5 @@
+using InvoiceManager.Core;
+using InvoiceManager.Core.Integrations.FreeAgent;
 using InvoiceManager.Infrastructure;
 using InvoiceManager.Infrastructure.FreeAgentAuthorization;
 using InvoiceManager.Infrastructure.MicrosoftAuthorization;
@@ -243,12 +245,15 @@ public sealed class AdminAuthorizationPageTests
         // Otherwise a subsequent authorization of a different FreeAgent account would keep
         // pointing "Open FreeAgent bill" links at the previous account's subdomain.
         var freeAgentStore = new FakeFreeAgentAuthorizationStore(hasRefreshToken: true);
-        await freeAgentStore.SaveSubdomainAsync("previous-account");
+        await freeAgentStore.SaveSubdomainAsync(
+            FreeAgentSubdomain.TryParse("previousaccount") is FreeAgentSubdomain value
+                ? value
+                : throw new InvalidOperationException("Test subdomain did not parse."));
         var model = CreateAuthorizationModel(hasTokenCache: false, isSignedIn: true, freeAgentAuthorizationStore: freeAgentStore);
 
         await model.OnPostResetFreeAgentAsync();
 
-        Assert.Null(await freeAgentStore.ReadSubdomainAsync());
+        Assert.True(await freeAgentStore.ReadSubdomainAsync() is None);
     }
 
     private static WebApplicationFactory<Program> CreateConfiguredFactory(
@@ -389,7 +394,7 @@ public sealed class AdminAuthorizationPageTests
             this.hasRefreshToken = hasRefreshToken;
         }
 
-        public string? Subdomain { get; private set; }
+        public FreeAgentSubdomain? Subdomain { get; private set; }
 
         public Task<bool> HasRefreshTokenAsync(CancellationToken cancellationToken = default)
         {
@@ -413,12 +418,13 @@ public sealed class AdminAuthorizationPageTests
             return Task.CompletedTask;
         }
 
-        public Task<string?> ReadSubdomainAsync(CancellationToken cancellationToken = default)
+        public Task<Option<FreeAgentSubdomain>> ReadSubdomainAsync(CancellationToken cancellationToken = default)
         {
-            return Task.FromResult(Subdomain);
+            Option<FreeAgentSubdomain> result = Subdomain is FreeAgentSubdomain value ? value : Option.None;
+            return Task.FromResult(result);
         }
 
-        public Task SaveSubdomainAsync(string subdomain, CancellationToken cancellationToken = default)
+        public Task SaveSubdomainAsync(FreeAgentSubdomain subdomain, CancellationToken cancellationToken = default)
         {
             Subdomain = subdomain;
             return Task.CompletedTask;

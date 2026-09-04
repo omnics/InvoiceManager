@@ -14,13 +14,13 @@ public static class FreeAgentBillWebLinkExtensions
         /// authorized before its subdomain was captured) - never a guess at a link that might
         /// not resolve.
         /// </summary>
-        public Option<Uri> WebUrl(FreeAgentEnvironment environment, string? subdomain)
+        public Option<Uri> WebUrl(FreeAgentEnvironment environment, Option<FreeAgentSubdomain> subdomain)
         {
-            if (string.IsNullOrWhiteSpace(subdomain))
+            if (subdomain is not FreeAgentSubdomain value)
                 return Option.None;
 
             var id = bill.Url.Segments[^1].TrimEnd('/');
-            return new Uri(FreeAgentHosts.AppBaseUri(environment, subdomain), $"bills/{id}");
+            return new Uri(FreeAgentHosts.AppBaseUri(environment, value), $"bills/{id}");
         }
     }
 }

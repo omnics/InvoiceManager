@@ -1,3 +1,5 @@
+using InvoiceManager.Core;
+using InvoiceManager.Core.Integrations.FreeAgent;
 using InvoiceManager.Infrastructure.FreeAgentAuthorization;
 using InvoiceManager.Infrastructure.MicrosoftAuthorization;
 using Microsoft.Extensions.Options;
@@ -71,17 +73,9 @@ public sealed class KeyVaultFreeAgentAuthorizationStoreTests
         var secretStore = new FakeSecretStoreClient();
         var store = CreateStore(secretStore);
 
-        await store.SaveSubdomainAsync("acmeltd");
+        await store.SaveSubdomainAsync(RequireSubdomain("acmeltd"));
 
         Assert.Equal("acmeltd", secretStore.Secrets["custom-freeagent-subdomain"]);
-    }
-
-    [Fact]
-    public async Task SaveSubdomainAsync_Throws_WhenValueIsBlank()
-    {
-        var store = CreateStore(new FakeSecretStoreClient());
-
-        await Assert.ThrowsAsync<ArgumentException>(() => store.SaveSubdomainAsync("   "));
     }
 
     [Fact]
@@ -91,16 +85,33 @@ public sealed class KeyVaultFreeAgentAuthorizationStoreTests
         secretStore.Secrets["custom-freeagent-subdomain"] = "acmeltd";
         var store = CreateStore(secretStore);
 
-        Assert.Equal("acmeltd", await store.ReadSubdomainAsync());
+        Assert.True(await store.ReadSubdomainAsync() is FreeAgentSubdomain subdomain && subdomain.Value == "acmeltd");
     }
 
     [Fact]
-    public async Task ReadSubdomainAsync_ReturnsNull_WhenSecretIsMissing()
+    public async Task ReadSubdomainAsync_ReturnsNone_WhenSecretIsMissing()
     {
         var store = CreateStore(new FakeSecretStoreClient());
 
-        Assert.Null(await store.ReadSubdomainAsync());
+        Assert.True(await store.ReadSubdomainAsync() is None);
     }
+
+    [Fact]
+    public async Task ReadSubdomainAsync_ReturnsNone_WhenTheStoredSecretIsNotAValidSubdomain()
+    {
+        // Defends against a corrupted/tampered secret (e.g. hand-edited in the portal) - must
+        // never crash the dashboard, just disable the bill link the same as "not known yet".
+        var secretStore = new FakeSecretStoreClient();
+        secretStore.Secrets["custom-freeagent-subdomain"] = "not a valid subdomain!";
+        var store = CreateStore(secretStore);
+
+        Assert.True(await store.ReadSubdomainAsync() is None);
+    }
+
+    private static FreeAgentSubdomain RequireSubdomain(string value) =>
+        FreeAgentSubdomain.TryParse(value) is FreeAgentSubdomain subdomain
+            ? subdomain
+            : throw new InvalidOperationException($"'{value}' is not a valid test subdomain.");
 
     [Fact]
     public async Task ClearSubdomainAsync_DeletesSecret()

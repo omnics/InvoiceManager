@@ -1,3 +1,5 @@
+using InvoiceManager.Core;
+using InvoiceManager.Core.Integrations.FreeAgent;
 using InvoiceManager.Infrastructure.MicrosoftAuthorization;
 using Microsoft.Extensions.Options;
 
@@ -50,19 +52,15 @@ public sealed class KeyVaultFreeAgentAuthorizationStore : IFreeAgentAuthorizatio
         return secretStoreClient.DeleteSecretAsync(secretName, cancellationToken);
     }
 
-    public Task<string?> ReadSubdomainAsync(CancellationToken cancellationToken = default)
+    public async Task<Option<FreeAgentSubdomain>> ReadSubdomainAsync(CancellationToken cancellationToken = default)
     {
-        return secretStoreClient.GetSecretAsync(subdomainSecretName, cancellationToken);
+        var raw = await secretStoreClient.GetSecretAsync(subdomainSecretName, cancellationToken);
+        return FreeAgentSubdomain.TryParse(raw);
     }
 
-    public Task SaveSubdomainAsync(string subdomain, CancellationToken cancellationToken = default)
+    public Task SaveSubdomainAsync(FreeAgentSubdomain subdomain, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(subdomain))
-        {
-            throw new ArgumentException("Subdomain cannot be empty.", nameof(subdomain));
-        }
-
-        return secretStoreClient.SetSecretAsync(subdomainSecretName, subdomain, cancellationToken);
+        return secretStoreClient.SetSecretAsync(subdomainSecretName, subdomain.Value, cancellationToken);
     }
 
     public Task ClearSubdomainAsync(CancellationToken cancellationToken = default)

@@ -21,7 +21,7 @@ public sealed class FreeAgentCompanyLookupTests
 
         var company = await lookup.GetCompanyAsync("access-token", FreeAgentEnvironment.Sandbox);
 
-        Assert.Equal("omnicssandbox", company.Subdomain);
+        Assert.Equal("omnicssandbox", company.Subdomain.Value);
         var request = Assert.Single(handler.Requests);
         Assert.Equal(HttpMethod.Get, request.Method);
         Assert.Equal("https://api.sandbox.freeagent.com/v2/company", request.RequestUri?.ToString());
@@ -43,7 +43,8 @@ public sealed class FreeAgentCompanyLookupTests
     [InlineData("""{"company": {"subdomain": ""}}""")]
     [InlineData("""{"company": {}}""")]
     [InlineData("""{}""")]
-    public async Task GetCompanyAsync_Throws_WhenTheSubdomainIsMissingOrBlank(string responseBody)
+    [InlineData("""{"company": {"subdomain": "evil.example/path"}}""")] // Not a valid DNS label.
+    public async Task GetCompanyAsync_Throws_WhenTheSubdomainIsMissingBlankOrInvalid(string responseBody)
     {
         var handler = new StubHttpMessageHandler((request, index) => new HttpResponseMessage(HttpStatusCode.OK)
         {

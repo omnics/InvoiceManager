@@ -1,3 +1,6 @@
+using InvoiceManager.Core;
+using InvoiceManager.Core.Integrations.FreeAgent;
+
 namespace InvoiceManager.Infrastructure.FreeAgentAuthorization;
 
 public interface IFreeAgentAuthorizationStore
@@ -13,11 +16,14 @@ public interface IFreeAgentAuthorizationStore
     /// <summary>
     /// The authorized FreeAgent account's web-app subdomain, captured from FreeAgent's own
     /// company resource at authorization time (see <see cref="FreeAgentCompanyLookup"/>) -
-    /// null if FreeAgent has never been authorized, or authorized before this capture existed.
+    /// <see cref="None"/> if FreeAgent has never been authorized, authorized before this capture
+    /// existed, or the stored secret doesn't parse as a valid <see cref="FreeAgentSubdomain"/>
+    /// (treated the same as "not known yet" rather than thrown, since a corrupted secret must
+    /// never crash the dashboard - it just disables the bill link until re-authorization).
     /// </summary>
-    Task<string?> ReadSubdomainAsync(CancellationToken cancellationToken = default);
+    Task<Option<FreeAgentSubdomain>> ReadSubdomainAsync(CancellationToken cancellationToken = default);
 
-    Task SaveSubdomainAsync(string subdomain, CancellationToken cancellationToken = default);
+    Task SaveSubdomainAsync(FreeAgentSubdomain subdomain, CancellationToken cancellationToken = default);
 
     Task ClearSubdomainAsync(CancellationToken cancellationToken = default);
 }

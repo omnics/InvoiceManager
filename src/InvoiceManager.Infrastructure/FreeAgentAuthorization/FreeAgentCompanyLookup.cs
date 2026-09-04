@@ -45,10 +45,9 @@ public sealed class FreeAgentCompanyLookup(HttpClient httpClient) : IFreeAgentCo
         }
 
         var companyResponse = await response.Content.ReadFromJsonAsync<CompanyResponseWire>(SerializerOptions, cancellationToken);
-        var subdomain = companyResponse?.Company?.Subdomain;
-        if (string.IsNullOrWhiteSpace(subdomain))
+        if (FreeAgentSubdomain.TryParse(companyResponse?.Company?.Subdomain) is not FreeAgentSubdomain subdomain)
         {
-            throw new InvalidOperationException("FreeAgent's company response did not include a subdomain.");
+            throw new InvalidOperationException("FreeAgent's company response did not include a valid subdomain.");
         }
 
         return new FreeAgentCompany(subdomain);

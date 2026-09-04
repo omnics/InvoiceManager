@@ -1,3 +1,5 @@
+using InvoiceManager.Core.Integrations.FreeAgent;
+
 namespace InvoiceManager.Infrastructure.FreeAgentAuthorization;
 
 /// <summary>
@@ -32,10 +34,10 @@ public static class FreeAgentHosts
     /// e.g. https://acmeltd.freeagent.com/ or https://acmeltd.sandbox.freeagent.com/ - for
     /// building links an operator can click to view a resource in FreeAgent's own UI.
     /// </summary>
-    public static Uri AppBaseUri(FreeAgentEnvironment environment, string subdomain) => environment switch
+    public static Uri AppBaseUri(FreeAgentEnvironment environment, FreeAgentSubdomain subdomain) => environment switch
     {
-        FreeAgentEnvironment.Sandbox => new Uri($"https://{subdomain}.sandbox.freeagent.com/"),
-        FreeAgentEnvironment.Production => new Uri($"https://{subdomain}.freeagent.com/"),
+        FreeAgentEnvironment.Sandbox => new Uri($"https://{subdomain.Value}.sandbox.freeagent.com/"),
+        FreeAgentEnvironment.Production => new Uri($"https://{subdomain.Value}.freeagent.com/"),
         _ => throw new ArgumentOutOfRangeException(
             nameof(environment), environment, "Unrecognised FreeAgent environment."),
     };

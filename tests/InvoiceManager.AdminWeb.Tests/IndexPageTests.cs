@@ -218,11 +218,13 @@ public sealed class IndexPageTests
     }
 
     [Fact]
-    public void HasAnyAction_IsFalse_WhenUnauthorizedAndTheMatchedBillHasNoConfiguredWebLink()
+    public async Task HasAnyAction_IsFalse_WhenUnauthorizedAndTheMatchedBillHasNoConfiguredWebLink()
     {
-        // FreeAgent:Subdomain isn't configured for this deployment, so FreeAgentBillUrl can't
-        // build a link even though the row has a matched bill.
+        // The FreeAgent account's subdomain hasn't been captured (via /Authorization) for this
+        // deployment, so FreeAgentBillUrl can't build a link even though the row has a matched
+        // bill - freeAgentSubdomain is only populated by a load, so this has to actually run one.
         var model = CreateIndexModel(hasWorkflowAuthorization: false, freeAgentSubdomain: "");
+        await model.OnGetAsync();
         var actualDetails = Actuals.Build(new DateOnly(2025, 7, 1));
         var row = new InvoiceSyncRow(
             new InvoiceConfigurationId("acme"), IntegrationType.MicrosoftBilling, "Acme invoice",
@@ -234,6 +236,33 @@ public sealed class IndexPageTests
             IsMostRecent: true);
 
         Assert.False(model.HasAnyAction(row));
+    }
+
+    [Fact]
+    public async Task HasAnyAction_And_FreeAgentBillUrl_ReflectAStoredSubdomain_AfterALoad()
+    {
+        var model = CreateIndexModel(hasWorkflowAuthorization: false, freeAgentSubdomain: "acmeltd");
+        await model.OnGetAsync();
+        var actualDetails = Actuals.Build(new DateOnly(2025, 7, 1));
+        var bill = new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/327959");
+        var row = new InvoiceSyncRow(
+            new InvoiceConfigurationId("acme"), IntegrationType.MicrosoftBilling, "Acme invoice",
+            IsActive: true, ExpectedDate: new DateOnly(2025, 7, 1),
+            State: new FreeAgentBillMatched(actualDetails, new OneDriveDetails("01ABCDEF", "test-drive", "test-item"), bill),
+            IsMostRecent: true);
+
+        Assert.True(model.HasAnyAction(row));
+        Assert.Equal("https://acmeltd.sandbox.freeagent.com/bills/327959", model.FreeAgentBillUrl(bill));
+    }
+
+    [Fact]
+    public async Task FreeAgentBillUrl_UsesTheProductionHost_WhenTheDeploymentsEnvironmentIsProduction()
+    {
+        var model = CreateIndexModel(freeAgentSubdomain: "acmeltd", freeAgentEnvironment: FreeAgentEnvironment.Production);
+        await model.OnGetAsync();
+        var bill = new FreeAgentBillIdentity("https://api.freeagent.com/v2/bills/327959");
+
+        Assert.Equal("https://acmeltd.freeagent.com/bills/327959", model.FreeAgentBillUrl(bill));
     }
 
     [Fact]
@@ -353,7 +382,8 @@ public sealed class IndexPageTests
         IInvoiceRecordResyncTrigger? resyncTrigger = null,
         bool hasWorkflowAuthorization = true,
         TimeProvider? timeProvider = null,
-        string freeAgentSubdomain = "acmeltd")
+        string freeAgentSubdomain = "acmeltd",
+        FreeAgentEnvironment freeAgentEnvironment = FreeAgentEnvironment.Sandbox)
     {
         var records = new InMemoryInvoiceRecordRepository();
         var model = new IndexModel(
@@ -362,7 +392,7 @@ public sealed class IndexPageTests
             new FakeMicrosoftAuthorizationStore(hasWorkflowAuthorization),
             resyncTrigger ?? new FakeInvoiceRecordResyncTrigger(),
             timeProvider ?? new FixedTimeProvider(new DateTimeOffset(2026, 9, 3, 14, 32, 31, TimeSpan.Zero)),
-            Options.Create(new FreeAgentOptions { Environment = FreeAgentEnvironment.Sandbox }),
+            Options.Create(new FreeAgentOptions { Environment = freeAgentEnvironment }),
             new FakeFreeAgentAuthorizationStore(freeAgentSubdomain));
 
         var httpContext = new DefaultHttpContext
@@ -390,10 +420,10 @@ public sealed class IndexPageTests
         public Task ClearRefreshTokenAsync(CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
-        public Task<string?> ReadSubdomainAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(subdomain);
+        public Task<Option<FreeAgentSubdomain>> ReadSubdomainAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(FreeAgentSubdomain.TryParse(subdomain));
 
-        public Task SaveSubdomainAsync(string subdomain, CancellationToken cancellationToken = default) =>
+        public Task SaveSubdomainAsync(FreeAgentSubdomain subdomain, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
         public Task ClearSubdomainAsync(CancellationToken cancellationToken = default) =>

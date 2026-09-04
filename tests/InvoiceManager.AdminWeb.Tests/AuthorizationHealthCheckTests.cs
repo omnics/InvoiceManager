@@ -1,3 +1,5 @@
+using InvoiceManager.Core;
+using InvoiceManager.Core.Integrations.FreeAgent;
 using InvoiceManager.Infrastructure.FreeAgentAuthorization;
 using InvoiceManager.Infrastructure.MicrosoftAuthorization;
 using InvoiceManager.TestSupport;
@@ -179,10 +181,10 @@ public sealed class AuthorizationHealthCheckTests
         public Task ClearRefreshTokenAsync(CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
-        public Task<string?> ReadSubdomainAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<string?>(null);
+        public Task<Option<FreeAgentSubdomain>> ReadSubdomainAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<Option<FreeAgentSubdomain>>(Option.None);
 
-        public Task SaveSubdomainAsync(string subdomain, CancellationToken cancellationToken = default) =>
+        public Task SaveSubdomainAsync(FreeAgentSubdomain subdomain, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
         public Task ClearSubdomainAsync(CancellationToken cancellationToken = default) =>

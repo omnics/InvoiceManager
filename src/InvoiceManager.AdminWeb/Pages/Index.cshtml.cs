@@ -31,7 +31,7 @@ public class IndexModel(
     // Loaded once per request in LoadAsync, mirroring HasWorkflowAuthorization - keeps
     // FreeAgentBillUrl/HasAnyAction synchronous for Razor's per-row calls even though the
     // underlying store lookup is async.
-    private string? freeAgentSubdomain;
+    private Option<FreeAgentSubdomain> freeAgentSubdomain = Option.None;
 
     public IReadOnlyList<InvoiceSyncRow> Rows { get; private set; } = [];
     public bool HasWorkflowAuthorization { get; private set; }
