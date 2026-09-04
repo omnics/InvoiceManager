@@ -43,6 +43,13 @@ public static class FreeAgentIntegrationRegistration
                 sp.GetRequiredService<IOptions<FreeAgentOptions>>(),
                 sp.GetRequiredService<IOptions<FreeAgentAuthorizationOptions>>());
         });
+        // The company lookup runs once, right after a fresh OAuth code exchange - a transient
+        // failure here (unlike other retryable background workflow calls) would force the
+        // administrator to redo the entire interactive authorization from scratch, so it gets
+        // the same resilience handling as FreeAgentApiClient rather than failing on the first hit.
+        services.AddHttpClient<IFreeAgentCompanyLookup, FreeAgentCompanyLookup>(
+                client => client.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent))
+            .AddStandardResilienceHandler();
 
         services.AddTransient<IFreeAgentBillMatcher, FreeAgentBillMatcher>();
         services.AddTransient<IFreeAgentBillReconciler, FreeAgentBillReconciler>();

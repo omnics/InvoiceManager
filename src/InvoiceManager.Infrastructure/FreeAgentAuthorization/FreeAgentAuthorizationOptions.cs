@@ -8,11 +8,21 @@ public sealed class FreeAgentAuthorizationOptions
 
     public const string DefaultRefreshTokenSecretName = "FreeAgentAuthorization--RefreshToken";
 
+    public const string DefaultSubdomainSecretName = "FreeAgentAuthorization--Subdomain";
+
     public string? ClientId { get; set; }
 
     public string? ClientSecret { get; set; }
 
     public string RefreshTokenSecretName { get; set; } = DefaultRefreshTokenSecretName;
+
+    /// <summary>
+    /// Where the authorized FreeAgent account's web-app subdomain is stored - captured from
+    /// FreeAgent's own company resource right after authorization (see
+    /// <see cref="FreeAgentCompanyLookup"/>), not configured, since it depends on which account
+    /// gets authorized rather than being known at deployment time.
+    /// </summary>
+    public string SubdomainSecretName { get; set; } = DefaultSubdomainSecretName;
 
     public bool HasClientConfiguration =>
         !string.IsNullOrWhiteSpace(ClientId) && !string.IsNullOrWhiteSpace(ClientSecret);
@@ -37,6 +47,11 @@ public sealed class FreeAgentAuthorizationOptionsValidator : IValidateOptions<Fr
         if (string.IsNullOrWhiteSpace(options.RefreshTokenSecretName))
         {
             failures.Add("FreeAgentAuthorization:RefreshTokenSecretName is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(options.SubdomainSecretName))
+        {
+            failures.Add("FreeAgentAuthorization:SubdomainSecretName is required.");
         }
 
         return failures.Count == 0

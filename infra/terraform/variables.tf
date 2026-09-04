@@ -55,12 +55,6 @@ variable "function_invoker_user_object_id" {
   default     = ""
 }
 
-variable "freeagent_subdomain" {
-  description = "This deployment's FreeAgent account web-app subdomain (the part before .freeagent.com or .sandbox.freeagent.com when browsing FreeAgent, e.g. \"acmeltd\") - distinct from the shared API host in FreeAgentHosts. Not a secret, but genuinely per-account data, so it cannot be derived like freeagent_environment can. Empty disables AdminWeb's \"Open FreeAgent bill\" link rather than guessing at one."
-  type        = string
-  default     = ""
-}
-
 # ---------------------------------------------------------------------------
 # GitHub CI consolidation
 #

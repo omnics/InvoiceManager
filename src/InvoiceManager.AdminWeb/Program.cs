@@ -56,7 +56,6 @@ builder.Services.AddOptions<AdminAuthorizationOptions>()
 builder.Services.AddOptions<FreeAgentOptions>()
     .Bind(builder.Configuration.GetSection(FreeAgentOptions.SectionName))
     .ValidateOnStart();
-builder.Services.AddSingleton<IValidateOptions<FreeAgentOptions>, FreeAgentOptionsValidator>();
 builder.Services
     .AddOptions<FreeAgentAuthorizationOptions>()
     .Bind(builder.Configuration.GetSection(FreeAgentAuthorizationOptions.SectionName))
@@ -348,9 +347,26 @@ internal sealed class FreeAgentOAuthOptionsSetup : IConfigureNamedOptions<OAuthO
                     "FreeAgent's token response did not include a refresh token.");
             }
 
+            if (string.IsNullOrWhiteSpace(context.AccessToken))
+            {
+                throw new InvalidOperationException(
+                    "FreeAgent's token response did not include an access token.");
+            }
+
+            // Resolved before saving anything: the subdomain identifies which FreeAgent account
+            // was actually just authorized, so it cannot be provisioned separately (e.g. via
+            // Terraform) without risking drift from whatever account this really is. If the
+            // lookup fails, this whole authorization attempt fails too, rather than leaving a
+            // refresh token saved with no matching subdomain.
+            var companyLookup = context.HttpContext.RequestServices
+                .GetRequiredService<IFreeAgentCompanyLookup>();
+            var company = await companyLookup.GetCompanyAsync(
+                context.AccessToken, environment, context.HttpContext.RequestAborted);
+
             var authorizationStore = context.HttpContext.RequestServices
                 .GetRequiredService<IFreeAgentAuthorizationStore>();
-            await authorizationStore.SaveRefreshTokenAsync(context.RefreshToken, context.HttpContext.RequestAborted);
+            await FreeAgentAuthorizationCapture.SaveAsync(
+                authorizationStore, context.RefreshToken, company, context.HttpContext.RequestAborted);
         };
     }
 

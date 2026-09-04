@@ -71,9 +71,10 @@ if (builder.Configuration.GetValue("AppHost:IncludeApplications", true))
         .WithEnvironment("MicrosoftAuthorization__TenantId", microsoftAuthTenantId)
         .WithEnvironment("MicrosoftAuthorization__ClientId", microsoftAuthClientId)
         .WithEnvironment("KeyVault__Uri", keyVaultUri)
-        // Local development is always against the FreeAgent sandbox company.
+        // Local development is always against the FreeAgent sandbox company. Its subdomain is
+        // captured at authorization time (via /Authorization's FreeAgent section), not
+        // configured here - see FreeAgentCompanyLookup.
         .WithEnvironment("FreeAgent__Environment", "Sandbox")
-        .WithEnvironment("FreeAgent__Subdomain", "omnicssandbox")
         .WithEnvironment("AdminAuthorization__GroupObjectId", adminGroupObjectId)
         .WithEnvironment("Functions__BaseUrl", functions.GetEndpoint("http"))
         .WaitFor(cosmos)

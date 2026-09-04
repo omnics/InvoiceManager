@@ -1,4 +1,5 @@
 using InvoiceManager.AdminWeb.Services;
+using InvoiceManager.Core;
 using InvoiceManager.Infrastructure;
 using InvoiceManager.Infrastructure.FreeAgentAuthorization;
 using InvoiceManager.Infrastructure.MicrosoftAuthorization;
@@ -58,6 +59,13 @@ public class AuthorizationModel : PageModel
     public IReadOnlyList<string> ConfigurationMessages { get; private set; } = [];
 
     public bool IsFreeAgentAuthorizationCaptured { get; private set; }
+
+    /// <summary>
+    /// A refresh token is stored, but no subdomain - either authorization was captured before
+    /// this capture existed, or a prior attempt to save the subdomain failed. The bill link on
+    /// the home dashboard stays disabled either way until this is resolved by re-authorizing.
+    /// </summary>
+    public bool IsFreeAgentSubdomainMissing { get; private set; }
 
     public bool CanAuthorizeFreeAgent { get; private set; }
 
@@ -142,7 +150,11 @@ public class AuthorizationModel : PageModel
 
     public async Task<IActionResult> OnPostResetFreeAgentAsync()
     {
-        await freeAgentAuthorizationStore.ClearRefreshTokenAsync(HttpContext.RequestAborted);
+        // Clears the subdomain before the refresh token (see FreeAgentAuthorizationCapture) -
+        // otherwise a failure between the two clears could leave the subdomain outliving the
+        // token that was supposed to own it, still usable for "Open FreeAgent bill" links even
+        // though this page would report FreeAgent as no longer authorized.
+        await FreeAgentAuthorizationCapture.ClearAsync(freeAgentAuthorizationStore, HttpContext.RequestAborted);
         TempData["FreeAgentStatusMessage"] = "FreeAgent authorization was reset.";
         return RedirectToPage();
     }
@@ -165,6 +177,8 @@ public class AuthorizationModel : PageModel
         }
 
         IsFreeAgentAuthorizationCaptured = await freeAgentAuthorizationStore.HasRefreshTokenAsync(HttpContext.RequestAborted);
+        IsFreeAgentSubdomainMissing = IsFreeAgentAuthorizationCaptured
+            && await freeAgentAuthorizationStore.ReadSubdomainAsync(HttpContext.RequestAborted) is None;
 
         FreeAgentConfigurationMessages = GetFreeAgentConfigurationMessages();
         CanAuthorizeFreeAgent = FreeAgentConfigurationMessages.Count == 0;

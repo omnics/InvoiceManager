@@ -461,10 +461,6 @@ resource "azurerm_container_app" "adminweb" {
         value = local.freeagent_environment
       }
       env {
-        name  = "FreeAgent__Subdomain"
-        value = var.freeagent_subdomain
-      }
-      env {
         name  = "AdminAuthorization__GroupObjectId"
         value = azuread_group.adminweb_administrators.object_id
       }

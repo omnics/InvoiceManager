@@ -91,10 +91,27 @@
             </div>
         }
 
+        @if (Model.IsFreeAgentSubdomainMissing)
+        {
+            <div class="notice warning">
+                <p>
+                    FreeAgent is authorized, but the account's web-app subdomain hasn't been
+                    captured yet (either this was authorized before that was captured, or a
+                    previous attempt to save it failed). The home dashboard's "Open FreeAgent
+                    bill" links stay disabled until this is fixed by replacing FreeAgent
+                    authorization below.
+                </p>
+            </div>
+        }
+
         <div class="status-grid status-grid-single">
             <section class="status-panel">
                 <h3>Captured authorization</h3>
-                <p class="status-value">@(Model.IsFreeAgentAuthorizationCaptured ? "Ready" : "Not captured")</p>
+                <p class="status-value">
+                    @(Model.IsFreeAgentAuthorizationCaptured
+                        ? (Model.IsFreeAgentSubdomainMissing ? "Ready (subdomain missing)" : "Ready")
+                        : "Not captured")
+                </p>
                 <p class="status-label">The refresh token is stored in Azure Key Vault.</p>
             </section>
         </div>
