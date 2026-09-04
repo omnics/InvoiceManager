@@ -664,6 +664,11 @@ function Remove-StaleDeployTargetVariables {
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $terraformRoot = Join-Path $repoRoot "infra/terraform"
 
+# Saved so the script's own GITHUB_TOKEN (sourced from 'gh auth token' below) can be removed on
+# exit without clobbering a token the caller's shell already had set - mirrors how
+# Invoke-ConfigurationSeeder already saves/restores ARM_ACCESS_KEY.
+$savedGithubToken = $env:GITHUB_TOKEN
+
 Write-Section "Checking tools"
 
 if (-not (Test-Command "terraform")) {
@@ -806,7 +811,20 @@ else {
     Ensure-StorageAccount -Name $stateStorageAccount -ResourceGroup $stateResourceGroup -Location $Location
 }
 $stateStorageKey = Get-StorageAccountKey -Name $stateStorageAccount -ResourceGroup $stateResourceGroup
-Ensure-StorageContainer -Name $stateContainer -StorageAccount $stateStorageAccount -StorageKey $stateStorageKey
+
+if ($ClearRecordsOnly) {
+    # As above: the storage account existing doesn't guarantee its tfstate container does (it
+    # could have been deleted independently) - check rather than let Ensure-StorageContainer
+    # silently create it.
+    $containerExists = (Invoke-JsonCommand -Command @("az", "storage", "container", "exists", "--name", $stateContainer, "--account-name", $stateStorageAccount, "--account-key", $stateStorageKey, "--output", "json")).exists
+    if (-not $containerExists) {
+        throw "Terraform backend container '$stateContainer' does not exist in storage account '$stateStorageAccount'. -ClearRecordsOnly only operates on an already-provisioned environment; run Deploy-Infra.ps1 -Environment $Environment (without -ClearRecordsOnly) first to provision it."
+    }
+    Write-Host "Storage container exists: $stateContainer"
+}
+else {
+    Ensure-StorageContainer -Name $stateContainer -StorageAccount $stateStorageAccount -StorageKey $stateStorageKey
+}
 
 Write-Section "Running Terraform"
 
@@ -937,5 +955,10 @@ try {
 finally {
     Pop-Location
     Remove-Item Env:\ARM_ACCESS_KEY -ErrorAction SilentlyContinue
-    Remove-Item Env:\GITHUB_TOKEN -ErrorAction SilentlyContinue
+    if ($null -ne $savedGithubToken) {
+        $env:GITHUB_TOKEN = $savedGithubToken
+    }
+    else {
+        Remove-Item Env:\GITHUB_TOKEN -ErrorAction SilentlyContinue
+    }
 }
