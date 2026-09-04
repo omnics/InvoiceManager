@@ -1163,7 +1163,10 @@ public sealed class DueInvoiceProcessorTests
         // calls) - the resulting FreeAgentInterventionPending must describe the intervention that
         // actually exists (existing.Bill/existing.Id), not this run's own (now-stale) details.Bill,
         // otherwise the record would point at one bill while the intervention it's "pending" on
-        // was raised against another.
+        // was raised against another. This run also carries proof of an earlier upload to its own
+        // matchedBill (from a prior FreeAgentError against that same bill) - since that proof is
+        // for a bill different from existing.Bill, it must not be carried over either, or it would
+        // be persisted as though it were proof of an upload to existing.Bill.
         var matching = new FreeAgentBillMatching(
             new FreeAgentContact(new FreeAgentContactIdentity("https://api.sandbox.freeagent.com/v2/contacts/1"), "Test Contact"),
             DateReconciliation: new FreeAgentDateReconciliation(0),
@@ -1176,12 +1179,14 @@ public sealed class DueInvoiceProcessorTests
         var matchedBill = new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1");
         var existingInterventionBill = new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/2");
         var item = new FreeAgentBillItemIdentity("https://api.sandbox.freeagent.com/v2/bills/1/items/1");
+        var priorAttachmentOnMatchedBill = new FreeAgentAttachmentMetadata(
+            "2025-07-12 Test Invoice G152207778 £10.00 exc.pdf", 3, "application/pdf", Today.ToDateTime(TimeOnly.MinValue));
         var erroredRecord = Records.Build(
             config,
             expectedDate: new DateOnly(2025, 7, 10),
             state: new FreeAgentError(
                 actualDetails, oneDriveDetails, "earlier verification failure",
-                new FreeAgentErrorBillContext(matchedBill, Option.None)));
+                new FreeAgentErrorBillContext(matchedBill, priorAttachmentOnMatchedBill)));
         var records = new InMemoryInvoiceRecordRepository(erroredRecord);
 
         var interventions = new InMemoryFreeAgentInterventionRepository();
@@ -1236,6 +1241,7 @@ public sealed class DueInvoiceProcessorTests
 
         Assert.Equal(existingInterventionBill, pending.Bill);
         Assert.Equal(existingIntervention.Id, pending.InterventionId);
+        Assert.True(pending.AttemptedAttachment is None);
     }
 
     [Fact]

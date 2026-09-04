@@ -627,9 +627,15 @@ public sealed class DueInvoiceProcessor(
             var pendingInterventions = await freeAgentInterventionRepository.ListPendingAsync(cancellationToken);
             if (pendingInterventions.FirstOrDefault(i => i.RecordId == record.Id) is { } existing)
             {
+                // lastKnownAttachment is proof of an upload to details.Bill (see its seeding in
+                // ProcessFreeAgentStageAsync) - only valid to carry forward here when the existing
+                // intervention's bill is that same bill; otherwise it would be persisted alongside
+                // existing.Bill as though it were proof of an upload to that different bill,
+                // violating FreeAgentInterventionPending's same-bill invariant.
+                var existingBillAttachment = existing.Bill == details.Bill ? lastKnownAttachment : Option.None;
                 var alreadyPending = record with
                 {
-                    State = new FreeAgentInterventionPending(actualDetails, oneDriveDetails, existing.Bill, existing.Id, lastKnownAttachment),
+                    State = new FreeAgentInterventionPending(actualDetails, oneDriveDetails, existing.Bill, existing.Id, existingBillAttachment),
                 };
                 await recordRepository.ReplaceAsync(alreadyPending, cancellationToken);
                 return new ProcessingFreeAgentInterventionRequired(record.Id, existing.Id);
