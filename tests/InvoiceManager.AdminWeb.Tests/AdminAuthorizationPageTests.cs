@@ -171,7 +171,7 @@ public sealed class AdminAuthorizationPageTests
     [Fact]
     public async Task AuthorizationPage_RendersFreeAgentReadyAndResetAction_WhenFreeAgentAuthorizationIsCaptured()
     {
-        await using var factory = CreateConfiguredFactory(hasFreeAgentRefreshToken: true);
+        await using var factory = CreateConfiguredFactory(hasFreeAgentRefreshToken: true, freeAgentSubdomain: "acmeltd");
         using var client = factory.CreateClient();
 
         var response = await client.GetAsync("/Authorization");
@@ -180,6 +180,25 @@ public sealed class AdminAuthorizationPageTests
         response.EnsureSuccessStatusCode();
         Assert.Contains("Replace FreeAgent authorization", body);
         Assert.DoesNotContain("Capture FreeAgent authorization", body);
+        Assert.DoesNotContain("FreeAgent is authorized, but the account's web-app subdomain hasn't been", body);
+        Assert.DoesNotContain("Ready (subdomain missing)", body);
+    }
+
+    [Fact]
+    public async Task AuthorizationPage_RendersSubdomainMissingWarning_ForLegacyTokenOnlyAuthorization()
+    {
+        // A refresh token captured before this feature existed (or a previous attempt whose
+        // subdomain save failed) has no subdomain secret at all - the operator must see this
+        // is incomplete, not assume the missing bill link is unexplained.
+        await using var factory = CreateConfiguredFactory(hasFreeAgentRefreshToken: true, freeAgentSubdomain: null);
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/Authorization");
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.EnsureSuccessStatusCode();
+        Assert.Contains("FreeAgent is authorized, but the account's web-app subdomain hasn't been", body);
+        Assert.Contains("Ready (subdomain missing)", body);
     }
 
     [Fact]
@@ -229,6 +248,44 @@ public sealed class AdminAuthorizationPageTests
     }
 
     [Fact]
+    public async Task AuthorizationPageModel_FlagsSubdomainMissing_WhenATokenIsPresentButNoSubdomainWasCaptured()
+    {
+        var freeAgentStore = new FakeFreeAgentAuthorizationStore(hasRefreshToken: true);
+        var model = CreateAuthorizationModel(hasTokenCache: false, isSignedIn: true, freeAgentAuthorizationStore: freeAgentStore);
+
+        await model.OnGetAsync();
+
+        Assert.True(model.IsFreeAgentSubdomainMissing);
+    }
+
+    [Fact]
+    public async Task AuthorizationPageModel_DoesNotFlagSubdomainMissing_WhenBothTokenAndSubdomainAreCaptured()
+    {
+        var freeAgentStore = new FakeFreeAgentAuthorizationStore(hasRefreshToken: true);
+        await freeAgentStore.SaveSubdomainAsync(
+            FreeAgentSubdomain.TryParse("acmeltd") is FreeAgentSubdomain value
+                ? value
+                : throw new InvalidOperationException("Test subdomain did not parse."));
+        var model = CreateAuthorizationModel(hasTokenCache: false, isSignedIn: true, freeAgentAuthorizationStore: freeAgentStore);
+
+        await model.OnGetAsync();
+
+        Assert.False(model.IsFreeAgentSubdomainMissing);
+    }
+
+    [Fact]
+    public async Task AuthorizationPageModel_DoesNotFlagSubdomainMissing_WhenNoTokenIsCapturedAtAll()
+    {
+        // Not-yet-authorized is a different, already-obvious state from "authorized but
+        // incomplete" - only the latter needs a distinct warning.
+        var model = CreateAuthorizationModel(hasTokenCache: false, isSignedIn: true, hasFreeAgentRefreshToken: false);
+
+        await model.OnGetAsync();
+
+        Assert.False(model.IsFreeAgentSubdomainMissing);
+    }
+
+    [Fact]
     public async Task AuthorizationPageModel_OnPostResetFreeAgent_ClearsRefreshTokenAndSetsStatusMessage()
     {
         var freeAgentStore = new FakeFreeAgentAuthorizationStore(hasRefreshToken: true);
@@ -259,6 +316,7 @@ public sealed class AdminAuthorizationPageTests
     private static WebApplicationFactory<Program> CreateConfiguredFactory(
         bool hasTokenCache = false,
         bool hasFreeAgentRefreshToken = false,
+        string? freeAgentSubdomain = null,
         bool isGroupMember = true,
         bool isAuthenticated = true,
         bool useTestAuthentication = true)
@@ -286,8 +344,15 @@ public sealed class AdminAuthorizationPageTests
                 {
                     services.AddSingleton<IMicrosoftAuthorizationStore>(
                         new FakeMicrosoftAuthorizationStore(hasTokenCache));
-                    services.AddSingleton<IFreeAgentAuthorizationStore>(
-                        new FakeFreeAgentAuthorizationStore(hasFreeAgentRefreshToken));
+                    var freeAgentStore = new FakeFreeAgentAuthorizationStore(hasFreeAgentRefreshToken);
+                    if (freeAgentSubdomain is not null)
+                    {
+                        freeAgentStore.SaveSubdomainAsync(
+                            FreeAgentSubdomain.TryParse(freeAgentSubdomain) is FreeAgentSubdomain value
+                                ? value
+                                : throw new InvalidOperationException("Test subdomain did not parse.")).GetAwaiter().GetResult();
+                    }
+                    services.AddSingleton<IFreeAgentAuthorizationStore>(freeAgentStore);
                     if (useTestAuthentication)
                     {
                         services.AddSingleton(new TestIdentity(isAuthenticated, isGroupMember));
