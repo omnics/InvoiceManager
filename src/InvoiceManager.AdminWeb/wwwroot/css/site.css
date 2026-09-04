@@ -669,7 +669,18 @@ pre {
 
 .invoice-sync-grid {
   display: grid;
-  grid-template-columns: 4px minmax(150px, 1.3fr) minmax(110px, .8fr) minmax(120px, .9fr) minmax(170px, 1.6fr) minmax(90px, auto);
+  /* Date and status are sized to bare `max-content` rather than a share of an `fr` unit or a
+     `minmax(<floor>, max-content)` with a smaller floor. Their text ("31 Aug 2026", "Needs
+     attention") is near-fixed length, so an `fr` share only ever sat there as unused space
+     instead of going where it's actually needed (config and diagnostic, both genuinely
+     variable-length) - and a floor smaller than the actual content (as the previous floors here
+     turned out to be for the "Needs attention" pill) lets the grid shrink the column below its
+     content's real width without a horizontal scrollbar, silently overflowing into - and being
+     painted over by - the next column instead. `max-content` alone acts as both the minimum and
+     the maximum, so the column always gets exactly what its content needs; any resulting
+     shortfall shows up as the grid genuinely overflowing (scrollable) instead of cells clipping
+     each other. */
+  grid-template-columns: 4px minmax(150px, 1.2fr) max-content max-content minmax(170px, 1.4fr) minmax(60px, auto);
   row-gap: 10px;
   font-size: .92rem;
 }
@@ -737,15 +748,35 @@ pre {
 .invoice-sync-grid .config-sub { margin-top: 2px; font-size: .78rem; color: var(--muted); font-weight: 500; }
 .invoice-sync-grid .date-cell { flex-direction: column; align-items: flex-start; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .invoice-sync-grid .date-sub { font-size: .78rem; color: var(--muted); font-weight: 500; }
-.invoice-sync-grid .diagnostic { color: var(--muted); font-size: .85rem; }
+/* [role="cell"] is a flex container, so its direct text content forms an anonymous flex item -
+   which defaults to min-width:auto (never shrinking below its own min-content size) same as any
+   other flex item. For ordinary text that's normally harmless (min-content already assumes
+   wrapping at spaces), but a long unbroken token like a URL has no spaces to wrap at, so its
+   min-content is the whole token - forcing this cell wider than its column and spilling text
+   over the neighboring column instead of wrapping. overflow-wrap:anywhere allows a break inside
+   such a token too, collapsing min-content down to a single character so the column's actual
+   width (not the token's length) governs wrapping - most text still only breaks at word
+   boundaries, since that's the first opportunity the browser reaches. */
+.invoice-sync-grid .diagnostic { color: var(--muted); font-size: .85rem; overflow-wrap: anywhere; }
 .invoice-sync-grid .diagnostic.is-error { color: var(--danger); }
 
 .invoice-sync-row.is-inactive [role="cell"]:not(.stripe-cell) { opacity: .6; }
 
+/* The actions column's track is only as wide as its minimum floor demands (see
+   grid-template-columns above) once that floor exceeds the "..." button's own content width -
+   without this, the button sits flush left in that extra space, reading as a much bigger gap to
+   the card's right edge than the button's left neighbor gets from the card's left edge. */
+.invoice-sync-grid .actions-cell { justify-content: flex-end; }
+
 /* Below this width the 5-column layout has nowhere left to shrink without garbling every
    field, so each record becomes its own card: the column headers (meaningless once nothing
-   lines up in columns) are hidden, and every field stacks full-width instead. */
-@media (max-width: 640px) {
+   lines up in columns) are hidden, and every field stacks full-width instead. 760px (not a
+   rounder, smaller number) is deliberate: the desktop grid's own column floors - stripe (4px) +
+   configuration (150px) + date/status (each sized to their own max-content) + diagnostic
+   (170px) + actions (60px), plus the page/panel padding around the grid - add up to just over
+   700px, so anything narrower already can't fit the desktop layout without a horizontal
+   scrollbar. This breakpoint has to sit above that sum, not below it. */
+@media (max-width: 760px) {
   .invoice-sync-grid {
     display: block;
   }
@@ -849,11 +880,17 @@ pre {
 .row-actions > summary::-webkit-details-marker { display: none; }
 .row-actions > summary::after { content: "\22EF"; }
 
+/* position:fixed (not absolute) deliberately: this panel can open on the Invoice Records
+   group's last row, and an absolutely-positioned panel is clipped by the nearest scrollable
+   ancestor - here .table-scroll, which also gets a forced overflow-y once overflow-x:auto makes
+   it non-visible, so the panel was both cut off and made the group box scroll vertically to
+   reach it. Fixed positioning is sized/clipped against the viewport instead, so the panel can
+   render above any surrounding content and never affects page/box layout or scroll height.
+   row-actions.js sets top/left on open (and on scroll/resize) since a fixed element has no
+   containing block to position "below the button" from automatically. */
 .row-actions-panel {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 4px);
-  right: 0;
+  position: fixed;
+  z-index: 1002;
   display: flex;
   flex-direction: column;
   gap: 2px;

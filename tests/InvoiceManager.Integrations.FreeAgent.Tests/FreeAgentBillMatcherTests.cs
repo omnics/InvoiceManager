@@ -7,6 +7,7 @@ namespace InvoiceManager.Integrations.FreeAgent.Tests;
 public sealed class FreeAgentBillMatcherTests
 {
     private const string ContactUrl = "https://api.sandbox.freeagent.com/v2/contacts/1";
+    private const string ContactDisplayName = "Test Contact Ltd";
     private const string BillUrl = "https://api.sandbox.freeagent.com/v2/bills/1";
 
     [Fact]
@@ -23,6 +24,7 @@ public sealed class FreeAgentBillMatcherTests
 
         var criteria = new FreeAgentBillSearchCriteria(
             new FreeAgentContactIdentity(ContactUrl),
+            ContactDisplayName,
             new DateOnly(2026, 8, 1),
             3,
             new Money(121.00m, "GBP"),
@@ -51,6 +53,7 @@ public sealed class FreeAgentBillMatcherTests
 
         var criteria = new FreeAgentBillSearchCriteria(
             new FreeAgentContactIdentity(ContactUrl),
+            ContactDisplayName,
             new DateOnly(2026, 8, 1),
             3,
             new Money(121.00m, "GBP"),
@@ -77,6 +80,7 @@ public sealed class FreeAgentBillMatcherTests
 
         var criteria = new FreeAgentBillSearchCriteria(
             new FreeAgentContactIdentity(ContactUrl),
+            ContactDisplayName,
             new DateOnly(2026, 8, 1),
             3,
             new Money(121.00m, "GBP"),
@@ -90,7 +94,8 @@ public sealed class FreeAgentBillMatcherTests
             return;
         }
 
-        Assert.Contains(ContactUrl, noMatch.Diagnostic);
+        Assert.Contains(ContactDisplayName, noMatch.Diagnostic);
+        Assert.DoesNotContain(ContactUrl, noMatch.Diagnostic);
         Assert.Contains("121.00", noMatch.Diagnostic);
         Assert.Contains("USD", noMatch.Diagnostic);
         Assert.Contains("GBP", noMatch.Diagnostic);
@@ -112,6 +117,7 @@ public sealed class FreeAgentBillMatcherTests
 
         var criteria = new FreeAgentBillSearchCriteria(
             new FreeAgentContactIdentity(ContactUrl),
+            ContactDisplayName,
             new DateOnly(2026, 8, 1),
             3,
             new Money(11.59m, "GBP"),
@@ -148,6 +154,7 @@ public sealed class FreeAgentBillMatcherTests
 
         var criteria = new FreeAgentBillSearchCriteria(
             new FreeAgentContactIdentity(ContactUrl),
+            ContactDisplayName,
             new DateOnly(2026, 8, 1),
             3,
             new Money(100.00m, "GBP"),
@@ -174,6 +181,7 @@ public sealed class FreeAgentBillMatcherTests
 
         var criteria = new FreeAgentBillSearchCriteria(
             new FreeAgentContactIdentity(ContactUrl),
+            ContactDisplayName,
             new DateOnly(2026, 8, 1),
             3,
             new Money(11.59m, "GBP"),
@@ -187,7 +195,8 @@ public sealed class FreeAgentBillMatcherTests
             return;
         }
 
-        Assert.Contains(ContactUrl, noMatch.Diagnostic);
+        Assert.Contains(ContactDisplayName, noMatch.Diagnostic);
+        Assert.DoesNotContain(ContactUrl, noMatch.Diagnostic);
         Assert.Contains("No FreeAgent bill", noMatch.Diagnostic);
     }
 

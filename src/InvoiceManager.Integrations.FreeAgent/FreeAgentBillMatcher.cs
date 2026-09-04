@@ -82,7 +82,7 @@ internal sealed class FreeAgentBillMatcher : IFreeAgentBillMatcher
 
         if (candidates.Count == 0)
         {
-            return $"No FreeAgent bill for contact {criteria.ContactUrl.Url} is dated between {windowStart:yyyy-MM-dd} " +
+            return $"No FreeAgent bill for {criteria.ContactDisplayName} is dated between {windowStart:yyyy-MM-dd} " +
                 $"and {windowEnd:yyyy-MM-dd}. Expected amount: {amountDescription}.";
         }
 
@@ -104,10 +104,10 @@ internal sealed class FreeAgentBillMatcher : IFreeAgentBillMatcher
             .FirstOrDefault();
 
         return nearest is null
-            ? $"{candidates.Count} FreeAgent bill(s) found for contact {criteria.ContactUrl.Url} dated between " +
+            ? $"{candidates.Count} FreeAgent bill(s) found for {criteria.ContactDisplayName} dated between " +
                 $"{windowStart:yyyy-MM-dd} and {windowEnd:yyyy-MM-dd}, but none had a parsable total value. " +
                 $"Expected amount: {amountDescription}."
-            : $"{candidates.Count} FreeAgent bill(s) found for contact {criteria.ContactUrl.Url} dated between " +
+            : $"{candidates.Count} FreeAgent bill(s) found for {criteria.ContactDisplayName} dated between " +
                 $"{windowStart:yyyy-MM-dd} and {windowEnd:yyyy-MM-dd}, but none matched the expected amount " +
                 $"{amountDescription}; nearest was {nearest.Url} for {nearest.TotalValue} {nearest.Currency}.";
     }
