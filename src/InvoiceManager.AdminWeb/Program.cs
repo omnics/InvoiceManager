@@ -365,22 +365,8 @@ internal sealed class FreeAgentOAuthOptionsSetup : IConfigureNamedOptions<OAuthO
 
             var authorizationStore = context.HttpContext.RequestServices
                 .GetRequiredService<IFreeAgentAuthorizationStore>();
-            await authorizationStore.SaveRefreshTokenAsync(context.RefreshToken, context.HttpContext.RequestAborted);
-            try
-            {
-                await authorizationStore.SaveSubdomainAsync(company.Subdomain, context.HttpContext.RequestAborted);
-            }
-            catch
-            {
-                // A refresh token now saved for the new account, paired with a subdomain that
-                // failed to save (still whatever - if anything - the previous account had) is
-                // exactly the drift this whole capture exists to prevent: authorization would
-                // report "captured" while any bill link keeps pointing at the wrong account.
-                // Clear the refresh token too so this attempt fails cleanly instead, forcing a
-                // clean retry rather than leaving a mismatched pair.
-                await authorizationStore.ClearRefreshTokenAsync(context.HttpContext.RequestAborted);
-                throw;
-            }
+            await FreeAgentAuthorizationCapture.SaveAsync(
+                authorizationStore, context.RefreshToken, company, context.HttpContext.RequestAborted);
         };
     }
 

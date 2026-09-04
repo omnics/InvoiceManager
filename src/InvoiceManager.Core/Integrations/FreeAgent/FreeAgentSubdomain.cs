@@ -36,6 +36,11 @@ public sealed partial class FreeAgentSubdomain : IEquatable<FreeAgentSubdomain>
 
     public override int GetHashCode() => Value.GetHashCode();
 
+    public static bool operator ==(FreeAgentSubdomain? left, FreeAgentSubdomain? right) =>
+        left is null ? right is null : left.Equals(right);
+
+    public static bool operator !=(FreeAgentSubdomain? left, FreeAgentSubdomain? right) => !(left == right);
+
     // \A/\z (not ^/$) so a trailing newline can't sneak a value like "acmeltd\n" past this -
     // $ matches before a final line terminator, \z only at the true end of the string.
     [GeneratedRegex(@"\A[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\z")]
