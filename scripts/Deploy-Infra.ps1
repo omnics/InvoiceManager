@@ -780,8 +780,31 @@ Write-Host "Storage account: $stateStorageAccount"
 Write-Host "Container: $stateContainer"
 Write-Host "State key: $stateKey"
 
-Ensure-ResourceGroup -Name $stateResourceGroup -Location $Location
-Ensure-StorageAccount -Name $stateStorageAccount -ResourceGroup $stateResourceGroup -Location $Location
+if ($ClearRecordsOnly) {
+    # -ClearRecordsOnly is documented as operating on an already-provisioned environment (see
+    # docs/deployment.md), unlike every other mode here, which idempotently creates the backend
+    # if missing. Never silently stand up a fresh, empty backend for a mistyped -Environment,
+    # -ApplicationName, or wrong subscription - fail fast instead.
+    $backendExists = $false
+    try {
+        $null = Invoke-JsonCommand -Command @("az", "storage", "account", "show", "--name", $stateStorageAccount, "--resource-group", $stateResourceGroup, "--output", "json")
+        $backendExists = $true
+    }
+    catch {
+        $backendExists = $false
+    }
+
+    if (-not $backendExists) {
+        throw "Terraform backend storage account '$stateStorageAccount' (resource group '$stateResourceGroup') does not exist. -ClearRecordsOnly only operates on an already-provisioned environment; run Deploy-Infra.ps1 -Environment $Environment (without -ClearRecordsOnly) first to provision it."
+    }
+
+    Write-Host "Resource group exists: $stateResourceGroup"
+    Write-Host "Storage account exists: $stateStorageAccount"
+}
+else {
+    Ensure-ResourceGroup -Name $stateResourceGroup -Location $Location
+    Ensure-StorageAccount -Name $stateStorageAccount -ResourceGroup $stateResourceGroup -Location $Location
+}
 $stateStorageKey = Get-StorageAccountKey -Name $stateStorageAccount -ResourceGroup $stateResourceGroup
 Ensure-StorageContainer -Name $stateContainer -StorageAccount $stateStorageAccount -StorageKey $stateStorageKey
 
