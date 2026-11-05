@@ -2,12 +2,10 @@ using Microsoft.Extensions.Configuration;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
-#pragma warning disable ASPIRECOSMOSDB001
 var cosmos = builder.AddAzureCosmosDB("cosmos")
-    .RunAsPreviewEmulator(
+    .RunAsEmulator(
         emulator => emulator.WithDataExplorer()
     );
-#pragma warning restore ASPIRECOSMOSDB001
 
 if (builder.Configuration.GetValue("AppHost:IncludeApplications", true))
 {

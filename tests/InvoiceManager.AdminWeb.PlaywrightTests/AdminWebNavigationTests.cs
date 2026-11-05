@@ -61,7 +61,7 @@ public sealed class AdminWebNavigationTests(AdminWebAppHostFixture appHost)
     }
 
     [Theory]
-    [InlineData("Home", "Home")]
+    [InlineData("Home", "Invoice processing")]
     [InlineData("Reauthorization", "Authorization")]
     [InlineData("Invoice configurations", "Invoice configurations")]
     [InlineData("Health status", "Health status")]
