@@ -16,7 +16,7 @@ public sealed class AdminWebSignInSmokeTests(AdminWebAppHostFixture appHost)
         await page.GotoAsync(appHost.AdminWebUrl.ToString());
 
         Assert.DoesNotContain("/signin-oidc", page.Url, StringComparison.OrdinalIgnoreCase);
-        await Assertions.Expect(page.Locator("h1")).ToHaveTextAsync("Home");
+        await Assertions.Expect(page.Locator("h1")).ToHaveTextAsync("Invoice processing");
     }
 
     [Fact]
