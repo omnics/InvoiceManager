@@ -161,6 +161,8 @@ public sealed class ConfigurationExportImportTests(AdminWebAppHostFixture appHos
         await page.GotoAsync(new Uri(appHost.AdminWebUrl, "/Configurations/Import").ToString());
         await page.SetInputFilesAsync("input[type=file]", exportPath!);
         await page.Locator("button[type=submit]", new PageLocatorOptions { HasText = "Load file" }).ClickAsync();
+        // Wait for the loaded form before editing it; otherwise the edit can race the post-back navigation.
+        await Assertions.Expect(page.Locator("#ConfirmedFolderSelection")).ToBeVisibleAsync();
         await page.EvalOnSelectorAsync("#Input_Id", "(el, v) => el.value = v", $"{sourceId}-imported");
         await page.Locator("#ConfirmedFolderSelection").CheckAsync();
         await page.Locator("button[type=submit]", new PageLocatorOptions { HasText = "Save configuration" }).ClickAsync();
