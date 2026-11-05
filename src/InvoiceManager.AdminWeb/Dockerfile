@@ -4,9 +4,10 @@
 # Build context MUST be the repository root (the app has project references across src/), e.g.
 #   docker build -f src/InvoiceManager.AdminWeb/Dockerfile -t ghcr.io/<owner>/invoicemanager-adminweb:<tag> .
 #
-# The preview tags track the net11.0 SDK pinned in global.json. If a restore fails on an SDK
-# mismatch, pin these to the exact preview build published on mcr.microsoft.com.
-ARG DOTNET_VERSION=11.0-preview
+# The 11.0 tags track the latest net11.0 release (RC builds included), which must satisfy the
+# SDK pinned in global.json. The 11.0-preview tags stopped at preview 7 once the RCs shipped.
+# If a restore fails on an SDK mismatch, check what 11.0 points to on mcr.microsoft.com.
+ARG DOTNET_VERSION=11.0
 
 FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION} AS build
 WORKDIR /src
