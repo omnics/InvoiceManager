@@ -363,6 +363,10 @@ resource "azurerm_function_app_flex_consumption" "functions" {
     # Non-secret: which FreeAgent host (sandbox/production) the unattended workflow calls.
     # Must match whichever FreeAgent app AdminWeb authorized, or every FreeAgent call fails.
     FreeAgent__Environment = local.freeagent_environment
+
+    # Azure Functions' documented per-function disable setting. Always set (to "false" when
+    # enabled) so flipping it is a plain in-place update rather than adding/removing a key.
+    "AzureWebJobs.GenerateExpectedRecordsTimer.Disabled" = var.functions_generation_timer_enabled ? "false" : "true"
   }
 
   # App Service Authentication (Easy Auth). Requires a valid Entra token on every

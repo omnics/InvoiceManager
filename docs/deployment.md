@@ -184,8 +184,19 @@ Use the PowerShell bootstrap script from the repository root:
 Parameter syntax:
 
 ```text
-./scripts/Deploy-Infra.ps1 -Environment <test|production> [-Location <location>] [-SubscriptionId <subscription-id>] [-ApplicationName <name>] [-PlanOnly] [-AutoApprove] [-ClearDatabase] [-ClearRecordsOnly] [-SkipGitHubManagement] [-PublishAdminWebImage] [-PromptFreeAgentClientId] [-PromptFreeAgentClientSecret]
+./scripts/Deploy-Infra.ps1 -Environment <test|production> [-Location <location>] [-SubscriptionId <subscription-id>] [-ApplicationName <name>] [-PlanOnly] [-AutoApprove] [-ClearDatabase] [-ClearRecordsOnly] [-SkipGitHubManagement] [-PublishAdminWebImage] [-PromptFreeAgentClientId] [-PromptFreeAgentClientSecret] [-EnableGenerationTimer]
 ```
+
+`-EnableGenerationTimer` controls the hourly `GenerateExpectedRecordsTimer`
+(record generation and due-invoice processing) through the Terraform variable
+`functions_generation_timer_enabled`, which sets the Function App's
+`AzureWebJobs.GenerateExpectedRecordsTimer.Disabled` app setting. The timer is
+always enabled for `test`. For `production` it is **disabled unless the switch is
+passed**, so a first or repeated production apply never starts unattended
+processing by accident; the script prints which way it is set before planning.
+Once production processing is live, pass `-EnableGenerationTimer` on every later
+production run, or the apply turns the timer back off. Manual processing and
+resync endpoints are not affected by this setting.
 
 `-PromptFreeAgentClientId` / `-PromptFreeAgentClientSecret` force the script to
 re-prompt for that FreeAgent OAuth credential even when it is already present

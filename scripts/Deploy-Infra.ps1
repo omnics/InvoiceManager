@@ -48,7 +48,13 @@ param(
     # rotates far more often than the client ID.
     [switch] $PromptFreeAgentClientId,
 
-    [switch] $PromptFreeAgentClientSecret
+    [switch] $PromptFreeAgentClientSecret,
+
+    # The hourly GenerateExpectedRecordsTimer is held off in production unless this is passed,
+    # so a fresh or re-run production apply never starts unattended processing by accident. It
+    # is always on for test. Once production processing is live, every later production run
+    # must pass this switch too, or the apply turns the timer back off.
+    [switch] $EnableGenerationTimer
 )
 
 if ($PublishAdminWebImage -and $AdminWebImage) {
@@ -62,6 +68,8 @@ if ($ClearDatabase -and $ClearRecordsOnly) {
 if ($PlanOnly -and $ClearRecordsOnly) {
     throw "-PlanOnly and -ClearRecordsOnly are mutually exclusive."
 }
+
+$generationTimerEnabled = $Environment -ne "production" -or $EnableGenerationTimer
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -869,12 +877,20 @@ try {
 
     $tfVarsFile = "$Environment.tfvars"
 
+    if ($generationTimerEnabled) {
+        Write-Host "Generation timer: ENABLED (hourly record generation and invoice processing will run)."
+    }
+    else {
+        Write-Host "Generation timer: DISABLED (production hold; pass -EnableGenerationTimer to run hourly processing)."
+    }
+
     $planArgs = @(
         "-detailed-exitcode",
         "-var-file=$tfVarsFile",
         "-var=location=$Location",
         "-var=application_name=$ApplicationName",
-        "-var=function_invoker_user_object_id=$functionInvokerUserObjectId"
+        "-var=function_invoker_user_object_id=$functionInvokerUserObjectId",
+        "-var=functions_generation_timer_enabled=$($generationTimerEnabled.ToString().ToLowerInvariant())"
     )
 
     if ($SkipGitHubManagement) {
