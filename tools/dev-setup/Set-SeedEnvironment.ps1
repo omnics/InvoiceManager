@@ -164,7 +164,9 @@ function Get-SingleBillingAccountName {
         [string] $AccountType
     )
 
-    $query = "value[?properties.accountType == '$AccountType'].name"
+    # Only Active accounts are candidates: a disabled account (e.g. one replaced by a new
+    # agreement) stays listed but can never receive new invoices.
+    $query = "value[?properties.accountType == '$AccountType' && properties.accountStatus == 'Active'].name"
     $output = @(
         & az rest `
             --method get `
@@ -182,7 +184,7 @@ function Get-SingleBillingAccountName {
     $names = @($output | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 
     if ($names.Count -ne 1) {
-        throw "Expected exactly one Azure Billing account with AccountType '$AccountType', but found $($names.Count)."
+        throw "Expected exactly one Active Azure Billing account with AccountType '$AccountType', but found $($names.Count)."
     }
 
     return $names[0]

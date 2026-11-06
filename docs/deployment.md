@@ -297,8 +297,8 @@ CurrentUser scope when it is not already available. It resolves the stable Graph
 item IDs for the `Bills/Microsoft 365`, `Bills/Azure + Visual Studio`,
 `Test/Bills/Microsoft 365`, and `Test/Bills/Azure + Visual Studio` folders (which
 must already exist in the target OneDrive) via path-based lookup. It uses the
-Azure Billing `billingAccounts` REST endpoint and requires exactly one account of
-each expected type, mapping the `Business` account to
+Azure Billing `billingAccounts` REST endpoint and requires exactly one Active
+account of each expected type (disabled accounts are ignored), mapping the `Business` account to
 `InvoiceManager__Seed__BillingAccountId` and the `Individual` account to
 `InvoiceManager__Seed__AzureBillingAccountId`. It sets all eight values in the
 current process and persistent User environment. Authentication prompts may
