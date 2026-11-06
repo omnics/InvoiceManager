@@ -1,10 +1,3 @@
-using Azure.Identity;
-using InvoiceManager.Infrastructure.FreeAgentAuthorization;
-using InvoiceManager.Infrastructure.MicrosoftAuthorization;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
-
 namespace InvoiceManager.Integrations.FreeAgent.IntegrationTests;
 
 /// <summary>
@@ -17,83 +10,20 @@ namespace InvoiceManager.Integrations.FreeAgent.IntegrationTests;
 /// administrator has completed authorization once via AdminWeb - no interactive browser/OIDC
 /// flow is needed to *use* it, only to originally capture it - so this test talks to
 /// FreeAgentApiClient directly rather than booting the whole AppHost through a browser.
-///
-/// Requires:
-/// - The developer signed in to Azure with access to the test environment's Key Vault
-///   (`az login`), the same prerequisite as the Cosmos/Microsoft integration tests.
-/// - `KeyVault:Uri` configured - reuses whatever InvoiceManager.AdminWeb's local user secrets
-///   already have set for Aspire, so no separate setup is needed if Aspire already runs locally.
-/// - A FreeAgent refresh token already captured against the sandbox company via AdminWeb's
-///   /Authorization page (FreeAgent section) - see docs/deployment.md.
+/// See <see cref="FreeAgentSandbox"/> for the prerequisites.
 ///
 /// Excluded from CI by the same `Category=Integration` filter as every other opt-in sandbox test
 /// in this repo (see AGENTS.md) - treat a green run as informative, not authoritative.
 /// </summary>
 [Trait("Category", "Integration")]
+[Collection(FreeAgentSandboxCollection.Name)]
 public sealed class FreeAgentContactDirectorySandboxTests
 {
     [Fact]
     public async Task SearchAsync_SucceedsAgainstTheRealSandboxApi()
     {
-        var localConfiguration = new ConfigurationBuilder()
-            .AddUserSecrets("InvoiceManager.AdminWeb")
-            .AddEnvironmentVariables()
-            .Build();
-
-        var keyVaultUri = localConfiguration.GetValue<Uri?>("KeyVault:Uri")
-            ?? throw new InvalidOperationException(
-                "KeyVault:Uri is not configured. Set it via `dotnet user-secrets set KeyVault:Uri " +
-                "<test-environment-key-vault-uri> --project src/InvoiceManager.AdminWeb` (the same " +
-                "value Aspire already uses locally), and be signed in to Azure with access to it " +
-                "(`az login`).");
-
-        // FreeAgentAuthorization:ClientId/ClientSecret are not local secrets - AdminWeb's own
-        // Program.cs loads them straight from Key Vault at startup (FreeAgentAuthorization--ClientId
-        // / FreeAgentAuthorization--ClientSecret) via this same provider, so this test does the same
-        // rather than requiring them to be duplicated into local user secrets.
-        var configuration = new ConfigurationBuilder()
-            .AddConfiguration(localConfiguration)
-            .AddAzureKeyVault(keyVaultUri, new DefaultAzureCredential())
-            .Build();
-
-        var authorizationOptions = configuration.GetSection(FreeAgentAuthorizationOptions.SectionName)
-            .Get<FreeAgentAuthorizationOptions>() ?? new FreeAgentAuthorizationOptions();
-
-        if (!authorizationOptions.HasClientConfiguration)
-        {
-            throw new InvalidOperationException(
-                "FreeAgentAuthorization:ClientId and/or FreeAgentAuthorization:ClientSecret are not " +
-                "configured in the test environment Key Vault - without them this test would fail " +
-                "later with an opaque token-endpoint error instead of this actionable one.");
-        }
-
-        // This test's whole premise is exercising the sandbox company - never the real one, even
-        // if a reused local/Key Vault configuration happens to have FreeAgent:Environment set to
-        // Production (which would otherwise silently point this "sandbox" test, including its
-        // Key Vault refresh-token rotation, at production).
-        var freeAgentOptions = new FreeAgentOptions { Environment = FreeAgentEnvironment.Sandbox };
-
-        var secretStoreClient = new AzureKeyVaultSecretStoreClient(keyVaultUri);
-        var authorizationStore = new KeyVaultFreeAgentAuthorizationStore(
-            secretStoreClient, Options.Create(authorizationOptions));
-
-        if (!await authorizationStore.HasRefreshTokenAsync())
-        {
-            throw new InvalidOperationException(
-                "No FreeAgent refresh token is stored in Key Vault. Complete FreeAgent authorization " +
-                "against the sandbox company via AdminWeb's /Authorization page (FreeAgent section) first.");
-        }
-
-        using var tokenHttpClient = new HttpClient();
-        tokenHttpClient.DefaultRequestHeaders.UserAgent.ParseAdd("InvoiceManager-IntegrationTests/1.0");
-        var tokenProvider = new FreeAgentTokenProvider(
-            tokenHttpClient, authorizationStore, Options.Create(freeAgentOptions), Options.Create(authorizationOptions));
-
-        using var apiHttpClient = new HttpClient();
-        apiHttpClient.DefaultRequestHeaders.UserAgent.ParseAdd("InvoiceManager-IntegrationTests/1.0");
-        var apiClient = new FreeAgentApiClient(
-            apiHttpClient, tokenProvider, Options.Create(freeAgentOptions), NullLogger<FreeAgentApiClient>.Instance);
-        var directory = new FreeAgentContactDirectory(apiClient);
+        using var sandbox = await FreeAgentSandbox.ConnectAsync();
+        var directory = new FreeAgentContactDirectory(sandbox.ApiClient);
 
         // Not asserting on specific contact data - the sandbox company's contents can change
         // freely and aren't this test's concern. What matters is that authentication succeeds and
