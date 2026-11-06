@@ -184,8 +184,23 @@ Use the PowerShell bootstrap script from the repository root:
 Parameter syntax:
 
 ```text
-./scripts/Deploy-Infra.ps1 -Environment <test|production> [-Location <location>] [-SubscriptionId <subscription-id>] [-ApplicationName <name>] [-PlanOnly] [-AutoApprove] [-ClearDatabase] [-ClearRecordsOnly] [-SkipGitHubManagement] [-PublishAdminWebImage] [-PromptFreeAgentClientId] [-PromptFreeAgentClientSecret]
+./scripts/Deploy-Infra.ps1 -Environment <test|production> [-Location <location>] [-SubscriptionId <subscription-id>] [-ApplicationName <name>] [-PlanOnly] [-AutoApprove] [-ClearDatabase] [-ClearRecordsOnly] [-SkipGitHubManagement] [-PublishAdminWebImage] [-PromptFreeAgentClientId] [-PromptFreeAgentClientSecret] [-EnableGenerationTimer:<true|false>]
 ```
+
+The hourly `GenerateExpectedRecordsTimer` (record generation and due-invoice
+processing) is controlled by the Terraform variable
+`functions_generation_timer_enabled`, which sets the Function App's
+`AzureWebJobs.GenerateExpectedRecordsTimer.Disabled` app setting. Each
+environment's default lives in its `.tfvars` file: `true` for `test`, and `false`
+for `production` until unattended processing is deliberately switched on, at
+which point that default should be changed to `true` in a pull request.
+`-EnableGenerationTimer:true` or `-EnableGenerationTimer:false` overrides the
+default for a single run (for example, to pause the test timer). Note that the
+next run without the parameter returns to the `.tfvars` default. Use the colon
+form exactly as shown: it is the only form that binds under `pwsh -File`, and
+writing `$false` from bash expands to nothing and silently falls back to the
+default. The script prints the effective setting and its source before
+planning. Manual processing and resync endpoints are not affected.
 
 `-PromptFreeAgentClientId` / `-PromptFreeAgentClientSecret` force the script to
 re-prompt for that FreeAgent OAuth credential even when it is already present

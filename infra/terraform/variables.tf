@@ -49,6 +49,11 @@ variable "functions_runtime_version" {
   default     = "10.0"
 }
 
+variable "functions_generation_timer_enabled" {
+  description = "Whether the hourly GenerateExpectedRecordsTimer (record generation and due-invoice processing) runs. Managed here rather than set out-of-band so a later apply cannot silently re-enable or disable it. Each environment's default is in its .tfvars file; Deploy-Infra.ps1 -EnableGenerationTimer:true|false overrides it for one run. Manual processing endpoints are unaffected."
+  type        = bool
+}
+
 variable "function_invoker_user_object_id" {
   description = "Entra object ID of the operator granted the Functions 'Invoke' app role (so they can call the endpoint directly). Deploy-Infra.ps1 derives this from the signed-in user (az ad signed-in-user show); no account identity is hardcoded. Empty for a CI/service-principal apply, which manages no operator assignment."
   type        = string

@@ -48,7 +48,14 @@ param(
     # rotates far more often than the client ID.
     [switch] $PromptFreeAgentClientId,
 
-    [switch] $PromptFreeAgentClientSecret
+    [switch] $PromptFreeAgentClientSecret,
+
+    # Overrides, for this run only, whether the hourly GenerateExpectedRecordsTimer runs. When
+    # omitted, the environment's .tfvars default applies (test: on; production: off until go-live).
+    # Pass it as -EnableGenerationTimer:true or -EnableGenerationTimer:false - the colon form is
+    # the only one that binds a Boolean under `pwsh -File`, and avoiding `$false` stops a calling
+    # bash shell from expanding it to nothing (which would silently fall back to the default).
+    [System.Nullable[bool]] $EnableGenerationTimer
 )
 
 if ($PublishAdminWebImage -and $AdminWebImage) {
@@ -869,6 +876,23 @@ try {
 
     $tfVarsFile = "$Environment.tfvars"
 
+    if ($null -ne $EnableGenerationTimer) {
+        $timerEnabled = [bool]$EnableGenerationTimer
+        $timerSource = "-EnableGenerationTimer override"
+    }
+    else {
+        $timerDefault = Select-String -Path (Join-Path $terraformRoot $tfVarsFile) `
+            -Pattern '^\s*functions_generation_timer_enabled\s*=\s*(true|false)\s*$' |
+            Select-Object -First 1
+        if ($null -eq $timerDefault) {
+            throw "$tfVarsFile does not set functions_generation_timer_enabled to true or false."
+        }
+        $timerEnabled = $timerDefault.Matches[0].Groups[1].Value -eq "true"
+        $timerSource = "$tfVarsFile default"
+    }
+    $timerState = if ($timerEnabled) { "ENABLED (hourly record generation and invoice processing will run)" } else { "DISABLED (hourly processing held off)" }
+    Write-Host "Generation timer: $timerState, from $timerSource."
+
     $planArgs = @(
         "-detailed-exitcode",
         "-var-file=$tfVarsFile",
@@ -876,6 +900,10 @@ try {
         "-var=application_name=$ApplicationName",
         "-var=function_invoker_user_object_id=$functionInvokerUserObjectId"
     )
+
+    if ($null -ne $EnableGenerationTimer) {
+        $planArgs += "-var=functions_generation_timer_enabled=$($EnableGenerationTimer.ToString().ToLowerInvariant())"
+    }
 
     if ($SkipGitHubManagement) {
         $planArgs += "-var=manage_github=false"
