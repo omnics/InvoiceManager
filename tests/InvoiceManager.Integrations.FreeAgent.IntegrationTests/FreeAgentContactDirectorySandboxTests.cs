@@ -16,6 +16,7 @@ namespace InvoiceManager.Integrations.FreeAgent.IntegrationTests;
 /// in this repo (see AGENTS.md) - treat a green run as informative, not authoritative.
 /// </summary>
 [Trait("Category", "Integration")]
+[Collection(FreeAgentSandboxCollection.Name)]
 public sealed class FreeAgentContactDirectorySandboxTests
 {
     [Fact]
