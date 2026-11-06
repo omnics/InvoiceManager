@@ -50,9 +50,8 @@ variable "functions_runtime_version" {
 }
 
 variable "functions_generation_timer_enabled" {
-  description = "Whether the hourly GenerateExpectedRecordsTimer (record generation and due-invoice processing) runs. Managed here rather than set out-of-band so a later apply cannot silently re-enable or disable it. Deploy-Infra.ps1 passes false for production unless -EnableGenerationTimer is given, and true for test; manual processing endpoints are unaffected."
+  description = "Whether the hourly GenerateExpectedRecordsTimer (record generation and due-invoice processing) runs. Managed here rather than set out-of-band so a later apply cannot silently re-enable or disable it. Each environment's default is in its .tfvars file; Deploy-Infra.ps1 -EnableGenerationTimer:true|false overrides it for one run. Manual processing endpoints are unaffected."
   type        = bool
-  default     = true
 }
 
 variable "function_invoker_user_object_id" {
