@@ -415,6 +415,14 @@ resource "azurerm_container_app_environment" "main" {
   location                   = azurerm_resource_group.invoice_manager.location
   resource_group_name        = azurerm_resource_group.invoice_manager.name
   log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
+
+  # Serverless, pay-per-use compute that scales to zero: the built-in profile Azure gives every
+  # workload-profiles environment. Declared explicitly so every environment is the same type
+  # (a consumption-only environment without it can't be converted; adding this replaces one).
+  workload_profile {
+    name                  = local.container_app_workload_profile_name
+    workload_profile_type = "Consumption"
+  }
 }
 
 resource "azurerm_container_app" "adminweb" {
@@ -422,6 +430,7 @@ resource "azurerm_container_app" "adminweb" {
   container_app_environment_id = azurerm_container_app_environment.main.id
   resource_group_name          = azurerm_resource_group.invoice_manager.name
   revision_mode                = "Single"
+  workload_profile_name        = local.container_app_workload_profile_name
 
   identity {
     type         = "UserAssigned"

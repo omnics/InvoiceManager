@@ -43,6 +43,9 @@ locals {
   # from the environment default domain, avoiding a dependency cycle with the app
   # registration (see main.tf, azuread_application redirect_uris).
   adminweb_container_app_name = "adminweb"
+
+  # The built-in serverless profile of a workload-profiles Container Apps environment.
+  container_app_workload_profile_name = "Consumption"
   # Precomputed from the environment default domain (not the app resource) to avoid a
   # dependency cycle with the app registration that consumes it as a redirect URI.
   adminweb_fqdn                  = "${local.adminweb_container_app_name}.${azurerm_container_app_environment.main.default_domain}"
