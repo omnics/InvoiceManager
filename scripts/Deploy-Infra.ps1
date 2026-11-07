@@ -55,7 +55,11 @@ param(
     # Pass it as -EnableGenerationTimer:true or -EnableGenerationTimer:false - the colon form is
     # the only one that binds a Boolean under `pwsh -File`, and avoiding `$false` stops a calling
     # bash shell from expanding it to nothing (which would silently fall back to the default).
-    [System.Nullable[bool]] $EnableGenerationTimer
+    [System.Nullable[bool]] $EnableGenerationTimer,
+
+    # Where this environment's alert and budget emails go. Defaults to the signed-in Azure
+    # user's mail (or UPN).
+    [string] $AlertEmail
 )
 
 if ($PublishAdminWebImage -and $AdminWebImage) {
@@ -739,6 +743,17 @@ else {
         $functionInvokerUserObjectId = $functionInvokerUserObjectId.Trim()
         Write-Host "Operator object id: $functionInvokerUserObjectId"
     }
+
+    # Alert and budget notifications go to -AlertEmail, or else the signed-in user's mail
+    # (falling back to their UPN) - derived, not hardcoded, like the operator identity above.
+    if ([string]::IsNullOrWhiteSpace($AlertEmail)) {
+        $AlertEmail = az ad signed-in-user show --query "mail || userPrincipalName" --output tsv 2>$null
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($AlertEmail)) {
+            throw "Could not derive an alert email from the signed-in Azure user. Pass -AlertEmail <address>."
+        }
+        $AlertEmail = $AlertEmail.Trim()
+    }
+    Write-Host "Alert and budget notifications: $AlertEmail"
 }
 
 if ($ClearRecordsOnly) {
@@ -898,7 +913,8 @@ try {
         "-var-file=$tfVarsFile",
         "-var=location=$Location",
         "-var=application_name=$ApplicationName",
-        "-var=function_invoker_user_object_id=$functionInvokerUserObjectId"
+        "-var=function_invoker_user_object_id=$functionInvokerUserObjectId",
+        "-var=alert_email=$AlertEmail"
     )
 
     if ($null -ne $EnableGenerationTimer) {

@@ -6,3 +6,5 @@ redirect_uris = [
 
 # Default when Deploy-Infra.ps1 is run without -EnableGenerationTimer:true|false.
 functions_generation_timer_enabled = true
+
+monthly_budget_amount = 10
