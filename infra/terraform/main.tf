@@ -416,12 +416,12 @@ resource "azurerm_container_app_environment" "main" {
   resource_group_name        = azurerm_resource_group.invoice_manager.name
   log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
 
-  lifecycle {
-    # Azure now creates new environments with a built-in "Consumption" workload profile
-    # (production, Nov 2026); older ones (test, Jul 2026) are consumption-only with none. Both
-    # bill the same, and Azure can't convert one into the other, so leave whatever Azure
-    # assigned rather than planning a removal that can never apply.
-    ignore_changes = [workload_profile]
+  # Serverless, pay-per-use compute that scales to zero: the built-in profile Azure gives every
+  # workload-profiles environment. Declared explicitly so every environment is the same type
+  # (a consumption-only environment without it can't be converted; adding this replaces one).
+  workload_profile {
+    name                  = local.container_app_workload_profile_name
+    workload_profile_type = "Consumption"
   }
 }
 
@@ -430,6 +430,7 @@ resource "azurerm_container_app" "adminweb" {
   container_app_environment_id = azurerm_container_app_environment.main.id
   resource_group_name          = azurerm_resource_group.invoice_manager.name
   revision_mode                = "Single"
+  workload_profile_name        = local.container_app_workload_profile_name
 
   identity {
     type         = "UserAssigned"
@@ -517,9 +518,7 @@ resource "azurerm_container_app" "adminweb" {
   lifecycle {
     # CI deploys concrete image tags via `az containerapp update --image ...:<sha>`.
     # Ignore image drift so Terraform does not revert to the bootstrap reference.
-    # workload_profile_name: Azure places the app on the environment's built-in "Consumption"
-    # profile where one exists (see the environment's lifecycle note above).
-    ignore_changes = [template[0].container[0].image, workload_profile_name]
+    ignore_changes = [template[0].container[0].image]
   }
 }
 
