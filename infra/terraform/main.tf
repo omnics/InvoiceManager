@@ -115,6 +115,15 @@ resource "azurerm_cosmosdb_account" "invoice_manager" {
     name = "EnableServerless"
   }
 
+  # Point-in-time restore to any moment in the last 7 days, so a bad processing run noticed
+  # days later can still be undone. The 7-day tier has no backup storage charge (restores are
+  # billed). The Azure default periodic policy kept only 8 hours. Periodic -> Continuous is a
+  # one-way migration.
+  backup {
+    type = "Continuous"
+    tier = "Continuous7Days"
+  }
+
   lifecycle {
     prevent_destroy = true
   }

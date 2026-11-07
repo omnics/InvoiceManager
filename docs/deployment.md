@@ -184,8 +184,11 @@ Use the PowerShell bootstrap script from the repository root:
 Parameter syntax:
 
 ```text
-./scripts/Deploy-Infra.ps1 -Environment <test|production> [-Location <location>] [-SubscriptionId <subscription-id>] [-ApplicationName <name>] [-PlanOnly] [-AutoApprove] [-ClearDatabase] [-ClearRecordsOnly] [-SkipGitHubManagement] [-PublishAdminWebImage] [-PromptFreeAgentClientId] [-PromptFreeAgentClientSecret] [-EnableGenerationTimer:<true|false>]
+./scripts/Deploy-Infra.ps1 -Environment <test|production> [-Location <location>] [-SubscriptionId <subscription-id>] [-ApplicationName <name>] [-PlanOnly] [-AutoApprove] [-ClearDatabase] [-ClearRecordsOnly] [-SkipGitHubManagement] [-PublishAdminWebImage] [-PromptFreeAgentClientId] [-PromptFreeAgentClientSecret] [-EnableGenerationTimer:<true|false>] [-AlertEmail <address>]
 ```
+
+`-AlertEmail` sets where the environment's alert and budget emails go (see
+Monitoring and Alerts); by default the signed-in Azure user's mail address is used.
 
 The hourly `GenerateExpectedRecordsTimer` (record generation and due-invoice
 processing) is controlled by the Terraform variable
@@ -870,12 +873,29 @@ If infrastructure changes cause issues:
 
 ## Monitoring and Alerts
 
-Post-deployment:
+Terraform (`infra/terraform/alerts.tf`) provisions per environment, with the
+environment name in capitals in every alert and budget name so notifications are
+unambiguous (for example `InvoiceManager-PRODUCTION-failed-runs`):
 
-1. Application Insights monitors function execution and exceptions.
-2. Azure Monitor alerts on high error rates or performance degradation.
-3. Cosmos DB metrics track request units and throttling.
-4. Key Vault access logs track secret retrieval.
+- **Action group** `InvoiceManager-<ENV>-alerts`, emailing `alert_email`
+  (`Deploy-Infra.ps1` derives it from the signed-in Azure user, or `-AlertEmail`).
+- **Failed runs** (severity 2, every 15 minutes): a processing, generation or
+  resync execution that failed, or a run summary reporting failed records or
+  failed record generation. Unmatched FreeAgent bills are not failures.
+- **Re-authorization needed** (severity 1, every 15 minutes): Microsoft or
+  FreeAgent token acquisition failures.
+- **Hourly run missing** (severity 2, hourly over a two-hour window): enabled only
+  while `functions_generation_timer_enabled` is true, so a deliberate hold never
+  raises it.
+- **Monthly budget** `InvoiceManager-<ENV>-monthly-budget` on the resource group
+  (`monthly_budget_amount` in each `.tfvars`), emailing at 80% actual and 100%
+  forecast spend. Normal usage is well below it; it is a runaway-cost tripwire.
+
+Cosmos DB uses continuous backup (`Continuous7Days`): point-in-time restore to any
+moment in the last seven days, with no backup storage charge.
+
+Use the action group's **Test** button in the Azure portal to confirm an email
+actually arrives after provisioning an environment.
 
 ## Documentation and References
 

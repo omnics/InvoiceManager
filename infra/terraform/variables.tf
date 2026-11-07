@@ -54,6 +54,16 @@ variable "functions_generation_timer_enabled" {
   type        = bool
 }
 
+variable "alert_email" {
+  description = "Email address that receives this environment's alert and budget notifications. Deploy-Infra.ps1 derives it from the signed-in Azure user (or -AlertEmail); no account identity is hardcoded."
+  type        = string
+}
+
+variable "monthly_budget_amount" {
+  description = "Monthly cost budget for this environment's resource group, in the billing currency. A tripwire for runaway spend, not a forecast: normal usage is a fraction of this."
+  type        = number
+}
+
 variable "function_invoker_user_object_id" {
   description = "Entra object ID of the operator granted the Functions 'Invoke' app role (so they can call the endpoint directly). Deploy-Infra.ps1 derives this from the signed-in user (az ad signed-in-user show); no account identity is hardcoded. Empty for a CI/service-principal apply, which manages no operator assignment."
   type        = string

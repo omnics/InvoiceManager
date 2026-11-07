@@ -8,3 +8,5 @@ redirect_uris = [
 # unattended processing is deliberately switched on (go-live step 11); change this to true then,
 # so later production runs don't need the parameter to keep it on.
 functions_generation_timer_enabled = false
+
+monthly_budget_amount = 10
