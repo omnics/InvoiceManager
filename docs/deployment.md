@@ -194,9 +194,8 @@ The hourly `GenerateExpectedRecordsTimer` (record generation and due-invoice
 processing) is controlled by the Terraform variable
 `functions_generation_timer_enabled`, which sets the Function App's
 `AzureWebJobs.GenerateExpectedRecordsTimer.Disabled` app setting. Each
-environment's default lives in its `.tfvars` file: `true` for `test`, and `false`
-for `production` until unattended processing is deliberately switched on, at
-which point that default should be changed to `true` in a pull request.
+environment's default lives in its `.tfvars` file, and is `true` for both `test`
+and `production`.
 `-EnableGenerationTimer:true` or `-EnableGenerationTimer:false` overrides the
 default for a single run (for example, to pause the test timer). Note that the
 next run without the parameter returns to the `.tfvars` default. Use the colon
