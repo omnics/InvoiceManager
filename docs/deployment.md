@@ -885,7 +885,9 @@ unambiguous (for example `InvoiceManager-PRODUCTION-failed-runs`):
   FreeAgent token acquisition failures.
 - **Hourly run missing** (severity 2, hourly over a two-hour window): enabled only
   while `functions_generation_timer_enabled` is true, so a deliberate hold never
-  raises it.
+  raises it. It resolves itself once runs resume. Expect it to fire once just after
+  the timer is switched from off to on, because its first check can look back over
+  the hold; a run within the next hour confirms the timer is healthy.
 - **Monthly budget** `InvoiceManager-<ENV>-monthly-budget` on the resource group
   (`monthly_budget_amount` in each `.tfvars`), emailing at 80% actual and 100%
   forecast spend. Normal usage is well below it; it is a runaway-cost tripwire.

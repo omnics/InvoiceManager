@@ -103,17 +103,20 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "authorization_failure
 
 # The hourly timer has not run for two hours. Only enabled while the timer itself is enabled,
 # so a deliberate hold (functions_generation_timer_enabled = false) never raises it.
+# Resolves itself once runs resume, so a recovered timer does not leave the alert open. Expect one
+# firing just after the timer goes from off to on: the first check looks back over the hold.
 resource "azurerm_monitor_scheduled_query_rules_alert_v2" "missing_scheduled_runs" {
-  name                 = "${local.alert_name_prefix}-missing-scheduled-runs"
-  display_name         = "[${local.alert_environment_label}] InvoiceManager: hourly run missing"
-  description          = "[${local.alert_environment_label}] GenerateExpectedRecordsTimer has not executed in the last two hours although it is enabled. Check the ${var.environment} Function App."
-  resource_group_name  = azurerm_resource_group.invoice_manager.name
-  location             = azurerm_resource_group.invoice_manager.location
-  scopes               = [azurerm_application_insights.main.id]
-  severity             = 2
-  enabled              = var.functions_generation_timer_enabled
-  evaluation_frequency = "PT1H"
-  window_duration      = "PT2H"
+  name                    = "${local.alert_name_prefix}-missing-scheduled-runs"
+  display_name            = "[${local.alert_environment_label}] InvoiceManager: hourly run missing"
+  description             = "[${local.alert_environment_label}] GenerateExpectedRecordsTimer has not executed in the last two hours although it is enabled. Check the ${var.environment} Function App."
+  resource_group_name     = azurerm_resource_group.invoice_manager.name
+  location                = azurerm_resource_group.invoice_manager.location
+  scopes                  = [azurerm_application_insights.main.id]
+  severity                = 2
+  enabled                 = var.functions_generation_timer_enabled
+  auto_mitigation_enabled = true
+  evaluation_frequency    = "PT1H"
+  window_duration         = "PT2H"
 
   criteria {
     query                   = <<-QUERY
