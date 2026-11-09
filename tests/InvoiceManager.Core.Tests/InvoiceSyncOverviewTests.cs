@@ -5,6 +5,42 @@ namespace InvoiceManager.Core.Tests;
 public sealed class InvoiceSyncOverviewTests
 {
     [Fact]
+    public void Row_IsCompleteAndExplainsTheDate_WhenFreeAgentRefusedTheDateChange()
+    {
+        var row = AttachedRow(new FreeAgentDateChangeRefused(
+            new DateOnly(2026, 5, 7), "FreeAgent rejected the dated_on change."));
+
+        Assert.Equal(InvoiceSyncBucket.Complete, row.Bucket);
+        Assert.True(row.Diagnostic is string diagnostic && diagnostic ==
+            "Attached, but the FreeAgent bill stays dated 2026-05-07 (invoice dated 2026-05-08): FreeAgent rejected the dated_on change.");
+    }
+
+    [Fact]
+    public void Row_HasNoDiagnostic_WhenAttachedWithoutARefusedDateChange()
+    {
+        Assert.True(AttachedRow(Option.None).Diagnostic is None);
+    }
+
+    private static InvoiceSyncRow AttachedRow(Option<FreeAgentDateChangeRefused> dateChangeRefused)
+    {
+        var config = Configurations.Build(id: new InvoiceConfigurationId("acme"));
+        return new InvoiceSyncRow(
+            config.Id,
+            config.IntegrationType,
+            config.InvoiceDescription,
+            IsActive: true,
+            ExpectedDate: new DateOnly(2026, 5, 7),
+            new FreeAgentAttached(
+                Actuals.Build(new DateOnly(2026, 5, 8)),
+                new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item"),
+                new Integrations.FreeAgent.FreeAgentBillIdentity("https://api.freeagent.com/v2/bills/1"),
+                new Integrations.FreeAgent.FreeAgentAttachmentMetadata(
+                    "invoice.pdf", 1024, "application/pdf", DateTimeOffset.UtcNow),
+                dateChangeRefused),
+            IsMostRecent: true);
+    }
+
+    [Fact]
     public async Task GetRowsAsync_ShowsOnlyTheCurrentRow_WhenTheCurrentRecordIsAlreadyComplete()
     {
         var config = Configurations.Build(id: new InvoiceConfigurationId("acme"));
@@ -66,7 +102,8 @@ public sealed class InvoiceSyncOverviewTests
                 new OneDriveDetails("/drives/test/root:/Bills/Test/invoice.pdf", "test-drive", "invoice-item"),
                 new Integrations.FreeAgent.FreeAgentBillIdentity("https://api.freeagent.com/v2/bills/1"),
                 new Integrations.FreeAgent.FreeAgentAttachmentMetadata(
-                    "invoice.pdf", 1024, "application/pdf", DateTimeOffset.UtcNow)));
+                    "invoice.pdf", 1024, "application/pdf", DateTimeOffset.UtcNow),
+                Option.None));
         var stuckJune = Records.Build(
             config, expectedDate: new DateOnly(2025, 6, 1), state: new FreeAgentMatchExpected(
                 Actuals.Build(new DateOnly(2025, 6, 1)),
@@ -195,7 +232,8 @@ public sealed class InvoiceSyncOverviewTests
             nameof(FreeAgentAttached) => new FreeAgentAttached(
                 actualDetails, oneDrive, bill,
                 new Integrations.FreeAgent.FreeAgentAttachmentMetadata(
-                    "invoice.pdf", 1024, "application/pdf", DateTimeOffset.UtcNow)),
+                    "invoice.pdf", 1024, "application/pdf", DateTimeOffset.UtcNow),
+                Option.None),
             nameof(NotFound) => new NotFound("no invoice found within tolerance"),
             nameof(RetrievalError) => new RetrievalError("transient failure"),
             nameof(FreeAgentError) => new FreeAgentError(actualDetails, oneDrive, "reconciliation failed", Option.None),

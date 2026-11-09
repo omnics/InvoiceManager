@@ -406,16 +406,32 @@ public sealed class DueInvoiceProcessor(
             recordActivity?.AddEvent(new ActivityEvent("state_freeagent_bill_matched"));
 
             var currentBill = billFound.Bill;
+            Option<FreeAgentDateChangeRefused> dateChangeRefused = Option.None;
 
             if (matching.DateReconciliation is FreeAgentDateReconciliation && currentBill.DatedOn != actualDetails.ActualInvoiceDate)
             {
                 var dateResult = await freeAgentBillReconciler.ReconcileDateAsync(
                     billIdentity, actualDetails.ActualInvoiceDate, cancellationToken);
-                var outcome = await HandleReconciliationResultAsync(
-                    matchedRecord, actualDetails, oneDriveDetails, billIdentity, dateResult, lastKnownAttachment, cancellationToken);
-                if (outcome is DueInvoiceProcessingResult outcomeResult)
+
+                // FreeAgent refusing the date (a bill with a payment explained against it, for
+                // example) must not hold the invoice back from being attached: the bill was still
+                // matched within tolerance, so keep its date, attach, and flag the difference.
+                if (DateChangeRefusalReason(dateResult) is string refusalReason)
                 {
-                    return outcomeResult;
+                    dateChangeRefused = new FreeAgentDateChangeRefused(currentBill.DatedOn, refusalReason);
+                    recordActivity?.AddEvent(new ActivityEvent("freeagent_date_change_refused"));
+                    logger.LogWarning(
+                        "FreeAgent refused to change the bill date for record {RecordId} from {BillDatedOn} to {InvoiceDate}; attaching anyway: {Reason}",
+                        matchedRecord.Id, currentBill.DatedOn, actualDetails.ActualInvoiceDate, refusalReason);
+                }
+                else
+                {
+                    var outcome = await HandleReconciliationResultAsync(
+                        matchedRecord, actualDetails, oneDriveDetails, billIdentity, dateResult, lastKnownAttachment, cancellationToken);
+                    if (outcome is DueInvoiceProcessingResult outcomeResult)
+                    {
+                        return outcomeResult;
+                    }
                 }
             }
 
@@ -489,15 +505,15 @@ public sealed class DueInvoiceProcessor(
                 case FreeAgentAttachmentUploaded uploaded:
                     lastKnownAttachment = uploaded.New;
                     return await CompleteFreeAgentAttachAsync(
-                        reconciledRecord, actualDetails, oneDriveDetails, billIdentity, uploaded.New, recordActivity, cancellationToken);
+                        reconciledRecord, actualDetails, oneDriveDetails, billIdentity, uploaded.New, dateChangeRefused, recordActivity, cancellationToken);
                 case FreeAgentAttachmentReplaced replaced:
                     lastKnownAttachment = replaced.New;
                     return await CompleteFreeAgentAttachAsync(
-                        reconciledRecord, actualDetails, oneDriveDetails, billIdentity, replaced.New, recordActivity, cancellationToken);
+                        reconciledRecord, actualDetails, oneDriveDetails, billIdentity, replaced.New, dateChangeRefused, recordActivity, cancellationToken);
                 case FreeAgentAttachmentAlreadyCorrect already:
                     lastKnownAttachment = already.Existing;
                     return await CompleteFreeAgentAttachAsync(
-                        reconciledRecord, actualDetails, oneDriveDetails, billIdentity, already.Existing, recordActivity, cancellationToken);
+                        reconciledRecord, actualDetails, oneDriveDetails, billIdentity, already.Existing, dateChangeRefused, recordActivity, cancellationToken);
                 case FreeAgentAttachmentUnexpectedExisting:
                     {
                         const string reason = "The FreeAgent bill already has an attachment that does not match this invoice's last known upload.";
@@ -546,6 +562,13 @@ public sealed class DueInvoiceProcessor(
             return new ProcessingFailed(matchedRecord.Id, ex);
         }
     }
+
+    private static Option<string> DateChangeRefusalReason(FreeAgentReconciliationResult result) => result switch
+    {
+        FreeAgentRemoteRejected rejected => rejected.Detail,
+        FreeAgentBillLocked locked => $"FreeAgent bill locked: {locked.Reason}.",
+        _ => Option.None,
+    };
 
     /// <summary>Handles a reconciliation step's result. Returns null when reconciliation succeeded (continue the stage); otherwise returns the terminal-for-this-run result.</summary>
     /// <param name="lastKnownAttachment">
@@ -665,12 +688,13 @@ public sealed class DueInvoiceProcessor(
         OneDriveDetails oneDriveDetails,
         FreeAgentBillIdentity billIdentity,
         FreeAgentAttachmentMetadata attachment,
+        Option<FreeAgentDateChangeRefused> dateChangeRefused,
         Activity? recordActivity,
         CancellationToken cancellationToken)
     {
         var attached = reconciledRecord with
         {
-            State = new FreeAgentAttached(actualDetails, oneDriveDetails, billIdentity, attachment),
+            State = new FreeAgentAttached(actualDetails, oneDriveDetails, billIdentity, attachment, dateChangeRefused),
         };
         await recordRepository.ReplaceAsync(attached, cancellationToken);
         recordActivity?.AddEvent(new ActivityEvent("state_freeagent_attached"));

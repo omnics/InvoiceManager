@@ -879,8 +879,10 @@ unambiguous (for example `InvoiceManager-PRODUCTION-failed-runs`):
 - **Action group** `InvoiceManager-<ENV>-alerts`, emailing `alert_email`
   (`Deploy-Infra.ps1` derives it from the signed-in Azure user, or `-AlertEmail`).
 - **Failed runs** (severity 2, every 15 minutes): a processing, generation or
-  resync execution that failed, or a run summary reporting failed records or
-  failed record generation. Unmatched FreeAgent bills are not failures.
+  resync execution that failed, a run summary reporting failed records or failed
+  record generation, or a record left in `FreeAgentError` (it repeats on each
+  hourly retry until resolved). A FreeAgent bill that has not been entered yet is
+  not a failure.
 - **Re-authorization needed** (severity 1, every 15 minutes): Microsoft or
   FreeAgent token acquisition failures.
 - **Hourly run missing** (severity 2, hourly over a two-hour window): enabled only

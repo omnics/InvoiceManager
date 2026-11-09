@@ -91,15 +91,27 @@ public sealed record FreeAgentBillReconciled(
     ActualInvoiceDetails ActualDetails, OneDriveDetails OneDriveDetails, FreeAgentBillIdentity Bill);
 
 /// <summary>
+/// FreeAgent refused to change a matched bill's date (for example because a payment is already
+/// explained against the bill), so the bill kept <see cref="BillDatedOn"/> and the invoice was
+/// attached to it anyway. Not a failure, but the two dates disagree, so it is kept for an
+/// operator to review.
+/// </summary>
+public sealed record FreeAgentDateChangeRefused(DateOnly BillDatedOn, string Reason);
+
+/// <summary>
 /// The invoice PDF has been uploaded/replaced on the matched FreeAgent bill and its
 /// attachment metadata verified. Terminal success state for records whose
 /// configuration uses FreeAgent.
 /// </summary>
+/// <param name="DateChangeRefused">
+/// Present when date reconciliation wanted to correct the bill's date but FreeAgent refused.
+/// </param>
 public sealed record FreeAgentAttached(
     ActualInvoiceDetails ActualDetails,
     OneDriveDetails OneDriveDetails,
     FreeAgentBillIdentity Bill,
-    FreeAgentAttachmentMetadata Attachment);
+    FreeAgentAttachmentMetadata Attachment,
+    Option<FreeAgentDateChangeRefused> DateChangeRefused);
 
 /// <summary>
 /// FreeAgent processing could not continue automatically and needs an

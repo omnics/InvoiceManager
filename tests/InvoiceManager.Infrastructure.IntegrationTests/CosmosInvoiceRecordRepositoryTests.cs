@@ -151,7 +151,8 @@ public sealed class CosmosInvoiceRecordRepositoryTests : IAsyncLifetime
                 new OneDriveDetails("/drives/test/root:/Bills/Test/attached.pdf", "test-drive", "attached-item"),
                 new FreeAgentBillIdentity("https://api.freeagent.com/v2/bills/1"),
                 new FreeAgentAttachmentMetadata(
-                    "invoice.pdf", 1024, "application/pdf", DateTimeOffset.UtcNow)));
+                    "invoice.pdf", 1024, "application/pdf", DateTimeOffset.UtcNow),
+                Option.None));
         var stuckJuly = BuildRecord(
             configurationId,
             new DateOnly(2025, 7, 1),

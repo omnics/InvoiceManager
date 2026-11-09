@@ -58,7 +58,7 @@ stateDiagram-v2
     FreeAgentMatchExpected --> FreeAgentBillMatched : exactly one FreeAgent bill matched
     FreeAgentMatchExpected --> FreeAgentMatchExpected : no bill matched yet, or match ambiguous (retry on a later run)
 
-    FreeAgentBillMatched --> FreeAgentBillReconciled : date/amount already agree, or reconciliation succeeded
+    FreeAgentBillMatched --> FreeAgentBillReconciled : date/amount already agree, reconciliation succeeded, or FreeAgent refused the date change
     FreeAgentBillMatched --> FreeAgentError : reconciliation technical/business failure
     FreeAgentBillMatched --> FreeAgentInterventionPending : amount reconciliation needs an admin decision (Guess removal)
 
@@ -105,6 +105,15 @@ stateDiagram-v2
         record's stored OneDriveDetails.OneDriveLocation rather than persisting
         them (the same way retrieval retries re-fetch from the source instead of
         persisting the PDF between states).
+    end note
+
+    note right of FreeAgentBillReconciled
+        FreeAgent refusing a date change (a validation rejection or a lock, as on a
+        bill with a payment explained against it) does not stop the invoice being
+        attached. The bill keeps its own date, and FreeAgentAttached records that
+        date and FreeAgent's reason for an operator to review. Technical failures
+        and failed verification of a date change still go to FreeAgentError, and so
+        does any refused amount change.
     end note
 
     note right of FreeAgentInterventionPending

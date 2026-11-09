@@ -65,6 +65,24 @@ internal sealed class OneDriveDetailsDocument
 }
 
 /// <summary>The Cosmos JSON shape for <see cref="FreeAgentAttachmentMetadata"/>.</summary>
+internal sealed class FreeAgentDateChangeRefusedDocument
+{
+    [JsonPropertyName("billDatedOn")]
+    public required string BillDatedOn { get; init; }
+
+    [JsonPropertyName("reason")]
+    public required string Reason { get; init; }
+
+    public FreeAgentDateChangeRefused ToRefusal() =>
+        new(DateOnly.ParseExact(BillDatedOn, "O", CultureInfo.InvariantCulture), Reason);
+
+    public static FreeAgentDateChangeRefusedDocument FromRefusal(FreeAgentDateChangeRefused refusal) => new()
+    {
+        BillDatedOn = refusal.BillDatedOn.ToString("O", CultureInfo.InvariantCulture),
+        Reason = refusal.Reason,
+    };
+}
+
 internal sealed class FreeAgentAttachmentMetadataDocument
 {
     [JsonPropertyName("fileName")]
@@ -156,6 +174,11 @@ internal sealed class InvoiceRecordDocument
     [JsonPropertyName("freeAgentAttachment")]
     public FreeAgentAttachmentMetadataDocument? FreeAgentAttachment { get; init; }
 
+    // Optional on FreeAgentAttached: FreeAgent refused the bill's date change, so the bill kept
+    // its own date. Absent on every record attached without a refusal.
+    [JsonPropertyName("freeAgentDateChangeRefused")]
+    public FreeAgentDateChangeRefusedDocument? DateChangeRefused { get; init; }
+
     // Present only for FreeAgentInterventionPending: the pending intervention this
     // record is waiting on a decision for.
     [JsonPropertyName("freeAgentInterventionId")]
@@ -187,6 +210,7 @@ internal sealed class InvoiceRecordDocument
             FreeAgentBillUrl = fields.FreeAgentBillUrl,
             FreeAgentAttachment = fields.FreeAgentAttachment,
             FreeAgentInterventionId = fields.FreeAgentInterventionId,
+            DateChangeRefused = fields.DateChangeRefused,
         };
     }
 
@@ -211,7 +235,8 @@ internal sealed class InvoiceRecordDocument
         nameof(FreeAgentBillReconciled) => new FreeAgentBillReconciled(
             RequiredActualDetails(), RequiredOneDriveDetails(), RequiredFreeAgentBillIdentity()),
         nameof(FreeAgentAttached) => new FreeAgentAttached(
-            RequiredActualDetails(), RequiredOneDriveDetails(), RequiredFreeAgentBillIdentity(), RequiredFreeAgentAttachment()),
+            RequiredActualDetails(), RequiredOneDriveDetails(), RequiredFreeAgentBillIdentity(), RequiredFreeAgentAttachment(),
+            DateChangeRefused is { } dateChangeRefused ? dateChangeRefused.ToRefusal() : Option.None),
         nameof(FreeAgentInterventionPending) => new FreeAgentInterventionPending(
             RequiredActualDetails(), RequiredOneDriveDetails(), RequiredFreeAgentBillIdentity(), RequiredFreeAgentInterventionId(),
             FreeAgentAttachment is { } pendingAttachment ? pendingAttachment.ToMetadata() : Option.None),
@@ -325,6 +350,9 @@ internal sealed class InvoiceRecordDocument
             OneDriveDetails = OneDriveDetailsDocument.FromDetails(attached.OneDriveDetails),
             FreeAgentBillUrl = attached.Bill.Url.OriginalString,
             FreeAgentAttachment = FreeAgentAttachmentMetadataDocument.FromMetadata(attached.Attachment),
+            DateChangeRefused = attached.DateChangeRefused is FreeAgentDateChangeRefused refusal
+                ? FreeAgentDateChangeRefusedDocument.FromRefusal(refusal)
+                : null,
         },
         FreeAgentInterventionPending pending => new()
         {
@@ -362,6 +390,7 @@ internal sealed class InvoiceRecordDocument
         public string? FreeAgentBillUrl { get; init; }
         public FreeAgentAttachmentMetadataDocument? FreeAgentAttachment { get; init; }
         public string? FreeAgentInterventionId { get; init; }
+        public FreeAgentDateChangeRefusedDocument? DateChangeRefused { get; init; }
     }
 }
 

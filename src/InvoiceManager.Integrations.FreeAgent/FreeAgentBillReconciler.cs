@@ -1,3 +1,4 @@
+using System.Net;
 using InvoiceManager.Core.Integrations.FreeAgent;
 using NodaMoney;
 
@@ -19,6 +20,9 @@ internal sealed class FreeAgentBillReconciler : IFreeAgentBillReconciler
         this.client = client;
     }
 
+    private static string DescribeRejection(string summary, string? validationMessage) =>
+        validationMessage is null ? $"{summary}." : $"{summary}: {validationMessage}";
+
     public async Task<FreeAgentReconciliationResult> ReconcileDateAsync(
         FreeAgentBillIdentity bill, DateOnly newDatedOn, CancellationToken cancellationToken = default)
     {
@@ -39,8 +43,12 @@ internal sealed class FreeAgentBillReconciler : IFreeAgentBillReconciler
         if (result.Value is null)
         {
             // A non-locked 422 (a normal validation rejection) - never proceed to re-read and
-            // verify the bill as though the mutation might have succeeded.
-            return new FreeAgentRemoteRejected("FreeAgent rejected the dated_on change.");
+            // verify the bill as though the mutation might have succeeded. Anything else with no
+            // bill is a success response that didn't say what happened: not a refusal, since the
+            // caller attaches regardless of a refused date.
+            return result.StatusCode == HttpStatusCode.UnprocessableEntity
+                ? new FreeAgentRemoteRejected(DescribeRejection("FreeAgent rejected the dated_on change", result.RejectionMessage))
+                : new FreeAgentVerificationFailed("FreeAgent reported success for the dated_on change but returned no bill.");
         }
 
         var after = await client.GetBillAsync(bill.Url.OriginalString, cancellationToken);
@@ -81,7 +89,7 @@ internal sealed class FreeAgentBillReconciler : IFreeAgentBillReconciler
             return await ClassifyLockedAsync(bill, item, result.LockedFieldDetail!, newTotalValue, cancellationToken);
 
         if (result.Value is null)
-            return new FreeAgentRemoteRejected("FreeAgent did not return an updated bill.");
+            return new FreeAgentRemoteRejected(DescribeRejection("FreeAgent did not return an updated bill", result.RejectionMessage));
 
         // Verify against an independent read, not the PUT response body - an optimistic or
         // stale mutation response could echo back what was requested without FreeAgent having

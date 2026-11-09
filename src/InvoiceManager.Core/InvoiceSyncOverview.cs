@@ -192,6 +192,9 @@ public sealed class InvoiceSyncOverview(
         Retrieved => "Retrieved; awaiting save to OneDrive",
         SavedToOneDrive => Option.None,
         ReconciledFromOneDrive => Option.None,
+        FreeAgentAttached { DateChangeRefused: FreeAgentDateChangeRefused refused } attached =>
+            $"Attached, but the FreeAgent bill stays dated {refused.BillDatedOn:yyyy-MM-dd} " +
+            $"(invoice dated {attached.ActualDetails.ActualInvoiceDate:yyyy-MM-dd}): {refused.Reason}",
         FreeAgentAttached => Option.None,
     };
 
