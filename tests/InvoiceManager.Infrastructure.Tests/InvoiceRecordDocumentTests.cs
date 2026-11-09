@@ -124,6 +124,30 @@ public sealed class InvoiceRecordDocumentTests
         Assert.Equal(record, roundTripped);
     }
 
+    public static TheoryData<Option<FreeAgentDateChangeRefused>> DateChangeRefusals => new()
+    {
+        Option.None,
+        new FreeAgentDateChangeRefused(new DateOnly(2025, 7, 4), "FreeAgent rejected the dated_on change."),
+    };
+
+    [Theory]
+    [MemberData(nameof(DateChangeRefusals))]
+    public void RoundTrip_PreservesRecord_WhenStateIsFreeAgentAttached(Option<FreeAgentDateChangeRefused> dateChangeRefused)
+    {
+        var record = BuildRecord(new FreeAgentAttached(
+            SampleActualDetails,
+            new OneDriveDetails(OneDriveLocation, DriveId, ItemId),
+            new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1"),
+            new FreeAgentAttachmentMetadata(
+                "2025-07-05 Test Invoice G152207778 £9.99 exc.pdf", 1024, "application/pdf",
+                new DateTimeOffset(2025, 7, 6, 8, 30, 0, TimeSpan.Zero)),
+            dateChangeRefused));
+
+        var roundTripped = InvoiceRecordDocument.FromRecord(record).ToRecord();
+
+        Assert.Equal(record, roundTripped);
+    }
+
     [Fact]
     public void RoundTrip_PreservesRecord_WhenStateIsFreeAgentInterventionPending_WithAttemptedAttachment()
     {

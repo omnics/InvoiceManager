@@ -246,6 +246,47 @@ public sealed class FreeAgentBillReconcilerTests
         Assert.Equal(2, handler.Requests.Count); // GET + failed PUT only, no re-GET
     }
 
+    [Theory]
+    [InlineData("""{"errors": {"dated_on": [{"message": "is not a valid date"}]}}""", "FreeAgent rejected the dated_on change: is not a valid date")]
+    [InlineData("""{"errors": {"error": {"message": "Bill has payments"}}}""", "FreeAgent rejected the dated_on change: Bill has payments")]
+    [InlineData("""{"errors": [{"message": "First"}, {"message": "Second"}, {"message": "First"}]}""", "FreeAgent rejected the dated_on change: First; Second")]
+    [InlineData("""{"errors": {"dated_on": ["no message property"]}, "token": "secret-value"}""", "FreeAgent rejected the dated_on change.")]
+    [InlineData("<html>secret-value</html>", "FreeAgent rejected the dated_on change.")]
+    [InlineData("", "FreeAgent rejected the dated_on change.")]
+    public async Task ReconcileDateAsync_ReportsOnlyFreeAgentsValidationMessages_WhenRejected(string errorBody, string expectedDetail)
+    {
+        var result = await RejectDateChangeAsync(errorBody);
+
+        Assert.True(result is FreeAgentRemoteRejected rejected && rejected.Detail == expectedDetail, $"Unexpected result: {result}.");
+    }
+
+    [Fact]
+    public async Task ReconcileDateAsync_CapsTheValidationMessageLength_WhenRejected()
+    {
+        var result = await RejectDateChangeAsync($$"""{"errors": [{"message": "{{new string('x', 1000)}}"}]}""");
+
+        Assert.True(
+            result is FreeAgentRemoteRejected rejected && rejected.Detail.Length == "FreeAgent rejected the dated_on change: ".Length + 300,
+            $"Unexpected result: {result}.");
+    }
+
+    private static async Task<FreeAgentReconciliationResult> RejectDateChangeAsync(string errorBody)
+    {
+        var handler = new StubHttpMessageHandler((request, index) =>
+            index switch
+            {
+                0 => JsonResponse(BillJson(status: "Open", items: [ItemUrl])),
+                1 => new HttpResponseMessage(System.Net.HttpStatusCode.UnprocessableEntity)
+                {
+                    Content = new StringContent(errorBody, System.Text.Encoding.UTF8, "application/json"),
+                },
+                _ => throw new InvalidOperationException("Unexpected request."),
+            });
+        var reconciler = new FreeAgentBillReconciler(TestClientFactory.Create(handler));
+
+        return await reconciler.ReconcileDateAsync(new FreeAgentBillIdentity(BillUrl), new DateOnly(2026, 8, 3));
+    }
+
     [Fact]
     public async Task ReconcileDateAsync_ReturnsVerificationFailed_WhenBillDateDoesNotReflectChange()
     {

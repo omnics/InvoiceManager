@@ -12,7 +12,8 @@ using Microsoft.Extensions.Options;
 namespace InvoiceManager.Integrations.FreeAgent;
 
 /// <summary>The result of a FreeAgent API call that could be rejected because a field is locked.</summary>
-internal sealed record FreeAgentApiResult<T>(T? Value, bool IsLocked, string? LockedFieldDetail, HttpStatusCode StatusCode)
+internal sealed record FreeAgentApiResult<T>(
+    T? Value, bool IsLocked, string? LockedFieldDetail, HttpStatusCode StatusCode, string? RejectionMessage = null)
 {
     public bool Succeeded => Value is not null;
 }
@@ -38,6 +39,8 @@ internal sealed class FreeAgentApiClient
 
     private readonly HttpClient httpClient;
     private readonly IFreeAgentTokenProvider tokenProvider;
+    private const int MaxValidationMessageLength = 300;
+
     private readonly ILogger<FreeAgentApiClient> logger;
 
     public FreeAgentApiClient(
@@ -115,7 +118,8 @@ internal sealed class FreeAgentApiClient
             // A 422 without the proven locked-field signal is a normal validation rejection
             // (e.g. an invalid date/amount), not a lock - report it as a non-locked, valueless
             // result so the caller translates it to a remote-rejected outcome, never a lock.
-            return new FreeAgentApiResult<BillWire>(default, IsLocked: false, null, response.StatusCode);
+            return new FreeAgentApiResult<BillWire>(
+                default, IsLocked: false, null, response.StatusCode, ExtractValidationMessages(errorBody));
         }
 
         await EnsureSuccessAsync(response, "updating a bill", cancellationToken);
@@ -268,6 +272,55 @@ internal sealed class FreeAgentApiClient
         // and this boundary must never leak tokens/secrets into logs or exceptions.
         throw new InvalidOperationException(
             $"FreeAgent request failed while {action}: {(int)response.StatusCode} {response.ReasonPhrase}.");
+    }
+
+    /// <summary>
+    /// The "message" values from a 422 body, which say why FreeAgent refused a change. Only those
+    /// values are ever kept, never the body itself, for the reason given in
+    /// <see cref="EnsureSuccessAsync"/>; they are also capped, since they end up in logs and on
+    /// the record.
+    /// </summary>
+    private static string? ExtractValidationMessages(string errorBody)
+    {
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(errorBody);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        using (document)
+        {
+            var messages = new List<string>();
+            CollectValidationMessages(document.RootElement, messages);
+            if (messages.Count == 0)
+                return null;
+
+            var joined = string.Join("; ", messages.Distinct());
+            return joined.Length <= MaxValidationMessageLength ? joined : joined[..MaxValidationMessageLength];
+        }
+    }
+
+    private static void CollectValidationMessages(JsonElement element, List<string> messages)
+    {
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+                CollectValidationMessages(item, messages);
+        }
+        else if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (property.NameEquals("message") && property.Value.ValueKind == JsonValueKind.String)
+                    messages.Add(property.Value.GetString()!);
+                else
+                    CollectValidationMessages(property.Value, messages);
+            }
+        }
     }
 
     /// <summary>

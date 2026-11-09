@@ -868,11 +868,105 @@ public sealed class DueInvoiceProcessorTests
         Assert.True(context.AttemptedAttachment is FreeAgentAttachmentMetadata attachment && attachment == priorAttachment);
     }
 
+    [Theory]
+    [InlineData(false, "FreeAgent rejected the dated_on change: Bill has payments")]
+    [InlineData(true, "FreeAgent bill locked: Unknown.")]
+    public async Task ProcessDueAsync_AttachesAndFlagsTheDate_WhenFreeAgentRefusesTheDateChange(bool locked, string expectedReason)
+    {
+        // Issue #154: a bill with a payment explained against it can't have its date changed. That
+        // must not hold the invoice back from being attached, and a record already stuck in
+        // FreeAgentError for this reason must recover on its next retry.
+        var uploaded = new FreeAgentAttachmentMetadata("invoice.pdf", 3, "application/pdf", Today.ToDateTime(TimeOnly.MinValue));
+        var scenario = BuildRefusedDateScenario(
+            refusal: () =>
+            {
+                if (locked)
+                    return new FreeAgentBillLocked(FreeAgentLockReason.Unknown);
+                return new FreeAgentRemoteRejected(expectedReason);
+            },
+            upload: () => new FreeAgentAttachmentUploaded(uploaded));
+
+        var results = await scenario.Processor.ProcessDueAsync();
+
+        Assert.True(Assert.Single(results) is ProcessingSucceeded);
+        var stored = scenario.Records.All.Single().State;
+        if (stored is not FreeAgentAttached attached)
+        {
+            Assert.Fail($"Expected FreeAgentAttached but was {stored}.");
+            return;
+        }
+
+        Assert.Equal(uploaded, attached.Attachment);
+        Assert.True(
+            attached.DateChangeRefused is FreeAgentDateChangeRefused refused &&
+            refused == new FreeAgentDateChangeRefused(scenario.BillDatedOn, expectedReason),
+            $"Unexpected refusal: {attached.DateChangeRefused}.");
+    }
+
+    [Fact]
+    public async Task ProcessDueAsync_StaysInFreeAgentError_WhenTheAttachmentFailsAfterARefusedDateChange()
+    {
+        var scenario = BuildRefusedDateScenario(
+            refusal: () => new FreeAgentRemoteRejected("FreeAgent rejected the dated_on change."),
+            upload: () => new FreeAgentBillLocked(FreeAgentLockReason.Unknown));
+
+        var results = await scenario.Processor.ProcessDueAsync();
+
+        Assert.True(Assert.Single(results) is ProcessingFreeAgentConflict);
+        Assert.True(scenario.Records.All.Single().State is FreeAgentError);
+    }
+
+    private static RefusedDateScenario BuildRefusedDateScenario(
+        Func<FreeAgentReconciliationResult> refusal, Func<FreeAgentAttachmentResult> upload)
+    {
+        var matching = new FreeAgentBillMatching(
+            new FreeAgentContact(new FreeAgentContactIdentity("https://api.sandbox.freeagent.com/v2/contacts/1"), "Test Contact"),
+            DateReconciliation: new FreeAgentDateReconciliation(6),
+            AmountReconciliation: new FreeAgentAmountReconciliation(0));
+        var config = Configurations.Build(startDate: new DateOnly(2025, 7, 10), freeAgentMatching: matching);
+        var actualDetails = Actuals.Build(
+            new DateOnly(2025, 7, 12), new Money(10.00m, "GBP"), new SourceInvoiceId("G152207778"));
+        var oneDriveDetails = new OneDriveDetails(
+            "/drives/test-drive/items/test-folder-item/existing.pdf", "test-drive", "existing-item");
+        var billIdentity = new FreeAgentBillIdentity("https://api.sandbox.freeagent.com/v2/bills/1");
+        var errored = Records.Build(
+            config,
+            expectedDate: new DateOnly(2025, 7, 10),
+            state: new FreeAgentError(
+                actualDetails, oneDriveDetails, "FreeAgent rejected the dated_on change.",
+                new FreeAgentErrorBillContext(billIdentity, Option.None)));
+        var records = new InMemoryInvoiceRecordRepository(errored);
+
+        var billDatedOn = actualDetails.ActualInvoiceDate.AddDays(-1);
+        var bill = new FreeAgentBillSnapshot(
+            billIdentity, FreeAgentBillStatus.Paid, billDatedOn, actualDetails.ActualInvoiceDate.AddDays(30),
+            actualDetails.ActualAmount, actualDetails.ActualAmount, new Money(0m, "GBP"), Option.None,
+            matching.Contact.Url, "REF-1", [], Option.None);
+
+        var processor = new DueInvoiceProcessor(
+            records,
+            new FakeConfigurationRepository(config),
+            [new FakeInvoiceSourceIntegration(new NoInvoiceMatch("test diagnostic"))],
+            new FakeOneDriveIntegration { DownloadResult = [1, 2, 3] },
+            BuildFilename(),
+            new FakeFreeAgentBillMatcher { Result = new FreeAgentBillFound(bill) },
+            new FakeFreeAgentBillReconciler { DateReconciliation = (_, _) => refusal() },
+            new FakeFreeAgentAttachmentUploader { Upload = (_, _, _) => upload() },
+            new InMemoryFreeAgentInterventionRepository(),
+            new FixedTimeProvider(Today),
+            NullLogger<DueInvoiceProcessor>.Instance);
+
+        return new RefusedDateScenario(processor, records, billDatedOn);
+    }
+
+    private sealed record RefusedDateScenario(
+        DueInvoiceProcessor Processor, InMemoryInvoiceRecordRepository Records, DateOnly BillDatedOn);
+
     [Fact]
     public async Task ProcessDueAsync_PreservesSameBillUploadProof_WhenReconciliationReturnsATypedFailureAgain()
     {
-        // The same guarantee as above, but for a typed reconciliation-result failure (bill
-        // locked) rather than a thrown exception - HandleReconciliationResultAsync must not
+        // The same guarantee as above, but for a typed reconciliation-result failure (verification
+        // failed) rather than a thrown exception - HandleReconciliationResultAsync must not
         // discard proof of an earlier upload to this same bill just because this retry's
         // reconciliation attempt was rejected rather than erroring outright.
         var matching = new FreeAgentBillMatching(
@@ -902,7 +996,7 @@ public sealed class DueInvoiceProcessorTests
         var matcher = new FakeFreeAgentBillMatcher { Result = new FreeAgentBillFound(bill) };
         var reconciler = new FakeFreeAgentBillReconciler
         {
-            DateReconciliation = (_, _) => new FreeAgentBillLocked(FreeAgentLockReason.Unknown),
+            DateReconciliation = (_, _) => new FreeAgentVerificationFailed("dated_on did not change"),
         };
         var source = new FakeInvoiceSourceIntegration(new NoInvoiceMatch("test diagnostic"));
         var oneDrive = new FakeOneDriveIntegration { DownloadResult = [1, 2, 3] };

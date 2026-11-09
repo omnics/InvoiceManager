@@ -21,13 +21,14 @@ resource "azurerm_monitor_action_group" "alerts" {
   }
 }
 
-# Any processing run that failed outright, or completed with failed records or failed record
-# generation. Unmatched FreeAgent bills are reported separately ("FreeAgent conflict") and are
-# deliberately not treated as failures.
+# Any processing run that failed outright, completed with failed records or failed record
+# generation, or left a record in FreeAgentError. The run summary's "FreeAgent conflict" count is
+# deliberately not used: it also counts bills that simply haven't been entered in FreeAgent yet,
+# which is normal, so FreeAgentError is detected from the log line written for each one.
 resource "azurerm_monitor_scheduled_query_rules_alert_v2" "failed_runs" {
   name                 = "${local.alert_name_prefix}-failed-runs"
   display_name         = "[${local.alert_environment_label}] InvoiceManager: processing run failed"
-  description          = "[${local.alert_environment_label}] An InvoiceManager processing, generation or resync execution failed, or reported failed records. Check the ${var.environment} admin website and Application Insights."
+  description          = "[${local.alert_environment_label}] An InvoiceManager processing, generation or resync execution failed, reported failed records, or could not complete FreeAgent processing for a record. Check the ${var.environment} admin website and Application Insights."
   resource_group_name  = azurerm_resource_group.invoice_manager.name
   location             = azurerm_resource_group.invoice_manager.location
   scopes               = [azurerm_application_insights.main.id]
@@ -44,7 +45,9 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "failed_runs" {
         | where message startswith "Due invoice processing run complete" or message startswith "Expected record generation complete"
         | extend failed = toint(extract(@"(\d+) failed", 1, message))
         | where failed > 0;
-      union failedExecutions, failedSummaries
+      let freeAgentErrors = traces
+        | where message startswith "FreeAgent processing for record" and message has " failed: ";
+      union failedExecutions, failedSummaries, freeAgentErrors
     QUERY
     time_aggregation_method = "Count"
     operator                = "GreaterThan"
