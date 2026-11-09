@@ -270,6 +270,27 @@ public sealed class FreeAgentBillReconcilerTests
             $"Unexpected result: {result}.");
     }
 
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("""{"bill": null}""")]
+    public async Task ReconcileDateAsync_ReturnsVerificationFailed_WhenASuccessfulResponseHasNoBill(string body)
+    {
+        // Only a 422 is FreeAgent actually refusing the change. A 2xx without a bill leaves the
+        // outcome unknown, so it must not be reported as a rejection.
+        var handler = new StubHttpMessageHandler((request, index) =>
+            index switch
+            {
+                0 => JsonResponse(BillJson(status: "Open", items: [ItemUrl])),
+                1 => JsonResponse(body),
+                _ => throw new InvalidOperationException("Unexpected request."),
+            });
+        var reconciler = new FreeAgentBillReconciler(TestClientFactory.Create(handler));
+
+        var result = await reconciler.ReconcileDateAsync(new FreeAgentBillIdentity(BillUrl), new DateOnly(2026, 8, 3));
+
+        Assert.True(result is FreeAgentVerificationFailed, $"Expected FreeAgentVerificationFailed but got {result}.");
+    }
+
     private static async Task<FreeAgentReconciliationResult> RejectDateChangeAsync(string errorBody)
     {
         var handler = new StubHttpMessageHandler((request, index) =>
